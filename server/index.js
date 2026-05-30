@@ -173,7 +173,23 @@ io.on('connection', (socket) => {
   socket.on('create-account', async ({ role }) => {
     const username = generateUsername();
     const accountKey = generateAccountKey();
-    const chosenRole = role || 'guest';
+    
+    let chosenRole = 'guest';
+    if (process.env.ALLOW_DEMO_ROLES === 'true') {
+      chosenRole = role || 'guest';
+    } else {
+      try {
+        const users = await db.getAllUsers();
+        if (users.length === 0) {
+          chosenRole = 'admin'; // Erste Registrierung erhält Admin-Rechte
+        } else {
+          chosenRole = 'guest'; // Alle weiteren sind Gäste
+        }
+      } catch (err) {
+        console.error('Fehler bei der Rollenprüfung bei Registrierung:', err);
+        chosenRole = 'guest';
+      }
+    }
     
     const newUser = {
       accountKey,
