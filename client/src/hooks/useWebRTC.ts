@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 
+import { RnnoiseWorkletNode, loadRnnoise } from '@sapphi-red/web-noise-suppressor';
+import rnnoiseWorkletPath from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
+import rnnoiseWasmPath from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
+import rnnoiseSimdPath from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
+
 const SOCKET_URL = 'http://localhost:3001';
 
 const rtcConfig: RTCConfiguration = {
@@ -47,8 +52,30 @@ export const useWebRTC = () => {
   // Benutzeridentität
   const [username, setUsername] = useState('');
   const [role, setRole] = useState('guest');
+  const [avatar, setAvatar] = useState<string | null>(null);
   const [accountKey, setAccountKey] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  const [activationMode, setActivationMode] = useState<'vad' | 'ptt'>(() => {
+    return (localStorage.getItem('voicechat-activation-mode') as 'vad' | 'ptt') || 'vad';
+  });
+  const activationModeRef = useRef(activationMode);
+
+  const [pttKey, setPttKey] = useState<string>(() => {
+    return localStorage.getItem('voicechat-ptt-key') || ' ';
+  });
+  const pttKeyRef = useRef(pttKey);
+
+  const [isPTTPressed, setIsPTTPressed] = useState(false);
+  const isPTTPressedRef = useRef(isPTTPressed);
+
+  const [noiseSuppressionMode, setNoiseSuppressionMode] = useState<'off' | 'gate' | 'rnnoise'>(() => {
+    return (localStorage.getItem('voicechat-ns-mode') as 'off' | 'gate' | 'rnnoise') || 'gate';
+  });
+  const noiseSuppressionModeRef = useRef(noiseSuppressionMode);
+
+  const rnnoiseBinaryRef = useRef<any>(null);
+  const rnnoiseWorkletLoadedRef = useRef(false);
 
   // Kanal-Listen
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -62,8 +89,8 @@ export const useWebRTC = () => {
   // Remote-Teilnehmer (Sprache) & Admintools
   const [remoteStreams, setRemoteStreams] = useState<RemoteStreamInfo[]>([]);
   const [adminUsersList, setAdminUsersList] = useState<any[]>([]); // Ausführliche Liste für Admins
-  const [onlineUsers, setOnlineUsers] = useState<Array<{ socketId: string; username: string; role: string }>>([]); // Vereinfachte Liste für Laufband
-  const [allUsers, setAllUsers] = useState<Array<{ username: string; role: string; online: boolean; socketId: string | null }>>([]); // Alle Kontakte
+  const [onlineUsers, setOnlineUsers] = useState<Array<{ socketId: string; username: string; role: string; avatar?: string | null }>>([]); // Vereinfachte Liste für Laufband
+  const [allUsers, setAllUsers] = useState<Array<{ username: string; role: string; online: boolean; socketId: string | null; avatar?: string | null }>>([]); // Alle Kontakte
 
   // Private Chats (PNs)
   const [privateChats, setPrivateChats] = useState<{ [username: string]: ChatMessage[] }>({});
@@ -78,6 +105,79 @@ export const useWebRTC = () => {
     noiseThresholdRef.current = noiseThreshold;
   }, [noiseThreshold]);
 
+  useEffect(() => {
+    activationModeRef.current = activationMode;
+    localStorage.setItem('voicechat-activation-mode', activationMode);
+  }, [activationMode]);
+
+  useEffect(() => {
+    pttKeyRef.current = pttKey;
+    localStorage.setItem('voicechat-ptt-key', pttKey);
+  }, [pttKey]);
+
+  useEffect(() => {
+    isPTTPressedRef.current = isPTTPressed;
+  }, [isPTTPressed]);
+
+  useEffect(() => {
+    noiseSuppressionModeRef.current = noiseSuppressionMode;
+    localStorage.setItem('voicechat-ns-mode', noiseSuppressionMode);
+  }, [noiseSuppressionMode]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (activationModeRef.current !== 'ptt') return;
+      
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT')) {
+        return;
+      }
+
+      if (e.key === pttKeyRef.current) {
+        if (e.key === ' ') {
+          e.preventDefault();
+        }
+        if (!e.repeat) {
+          setIsPTTPressed(true);
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (activationModeRef.current !== 'ptt') return;
+
+      if (e.key === pttKeyRef.current) {
+        setIsPTTPressed(false);
+      }
+    };
+
+    const handleBlur = () => {
+      if (activationModeRef.current === 'ptt') {
+        setIsPTTPressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activationMode === 'ptt' && localGainNodeRef.current && audioContextRef.current) {
+      const audioCtx = audioContextRef.current;
+      if (audioCtx.state !== 'closed') {
+        localGainNodeRef.current.gain.setTargetAtTime(isPTTPressed ? 1.0 : 0.0, audioCtx.currentTime, 0.01);
+        setLocalSpeaking(isPTTPressed);
+      }
+    }
+  }, [isPTTPressed, activationMode]);
+
   // Advanced Audio Einstellungen
   const [echoCancellation, setEchoCancellation] = useState(true);
   const [autoGainControl, setAutoGainControl] = useState(true);
@@ -86,9 +186,9 @@ export const useWebRTC = () => {
   // Trigger Re-init of local stream if constraints change
   useEffect(() => {
     if (joinedRoomId) {
-      initLocalStream(noiseSuppression);
+      initLocalStream(noiseSuppressionMode);
     }
-  }, [echoCancellation, autoGainControl, keyboardFilter]);
+  }, [echoCancellation, autoGainControl, keyboardFilter, noiseSuppressionMode]);
 
   const usernameRef = useRef(username);
   useEffect(() => {
@@ -102,7 +202,6 @@ export const useWebRTC = () => {
 
   // Audio-Einstellungen
   const [isMuted, setIsMuted] = useState(false);
-  const [noiseSuppression, setNoiseSuppression] = useState(true);
   const [selfHearing, setSelfHearing] = useState(false);
   const [localSpeaking, setLocalSpeaking] = useState(false);
 
@@ -160,11 +259,11 @@ export const useWebRTC = () => {
       setAdminUsersList(list);
     });
 
-    socket.on('online-users-list', (list: Array<{ socketId: string; username: string; role: string }>) => {
+    socket.on('online-users-list', (list: Array<{ socketId: string; username: string; role: string; avatar?: string | null }>) => {
       setOnlineUsers(list);
     });
 
-    socket.on('all-users-list', (list: Array<{ username: string; role: string; online: boolean; socketId: string | null }>) => {
+    socket.on('all-users-list', (list: Array<{ username: string; role: string; online: boolean; socketId: string | null; avatar?: string | null }>) => {
       setAllUsers(list);
     });
 
@@ -224,6 +323,11 @@ export const useWebRTC = () => {
       setUsername(newName);
     });
 
+    // --- Avatar Updates ---
+    socket.on('avatar-updated', ({ avatar: newAvatar }) => {
+      setAvatar(newAvatar);
+    });
+
     socket.on('user-updated', ({ socketId, username: newName }) => {
       setRemoteStreams((prev) =>
         prev.map((p) => (p.socketId === socketId ? { ...p, username: newName } : p))
@@ -237,20 +341,22 @@ export const useWebRTC = () => {
     });
 
     // --- Account Listeners ---
-    socket.on('account-created', ({ username: u, role: r, accountKey: k }) => {
+    socket.on('account-created', ({ username: u, role: r, accountKey: k, avatar: av }) => {
       setUsername(u);
       setRole(r);
       setAccountKey(k);
+      setAvatar(av || null);
       setIsLoggedIn(true);
       localStorage.setItem('voicechat-account-key', k);
       
       socket.emit('join-text-channel', { channelId: 'general' });
     });
 
-    socket.on('login-success', ({ username: u, role: r, accountKey: k }) => {
+    socket.on('login-success', ({ username: u, role: r, accountKey: k, avatar: av }) => {
       setUsername(u);
       setRole(r);
       setAccountKey(k);
+      setAvatar(av || null);
       setIsLoggedIn(true);
       localStorage.setItem('voicechat-account-key', k);
 
@@ -390,7 +496,7 @@ export const useWebRTC = () => {
   }, []);
 
   // 2. Lokalen Audio-Stream verwalten
-  const initLocalStream = async (suppressNoise: boolean) => {
+  const initLocalStream = async (nsMode: 'off' | 'gate' | 'rnnoise') => {
     try {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -402,11 +508,11 @@ export const useWebRTC = () => {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: echoCancellation,
-          noiseSuppression: suppressNoise,
+          noiseSuppression: nsMode !== 'off',
           autoGainControl: autoGainControl,
           channelCount: 1,
           sampleRate: 48000,
-          voiceIsolation: suppressNoise
+          voiceIsolation: nsMode !== 'off'
         } as any,
         video: false
       });
@@ -417,7 +523,7 @@ export const useWebRTC = () => {
         stream.getAudioTracks().forEach((track) => (track.enabled = false));
       }
 
-      setupSpeakingDetector(stream);
+      await setupSpeakingDetector(stream, nsMode);
 
       const streamToSend = processedStreamRef.current || stream;
       const newTrack = streamToSend.getAudioTracks()[0];
@@ -434,7 +540,7 @@ export const useWebRTC = () => {
     }
   };
 
-  const setupSpeakingDetector = (stream: MediaStream) => {
+  const setupSpeakingDetector = async (stream: MediaStream, nsMode: 'off' | 'gate' | 'rnnoise') => {
     if (speechIntervalRef.current) clearInterval(speechIntervalRef.current);
     
     try {
@@ -461,11 +567,39 @@ export const useWebRTC = () => {
       
       // Verbindungen aufbauen
       source.connect(analyser); // Analysiert den rohen Mikrofonton
+
+      let currentNode: AudioNode = source;
+
+      // Dynamic WebAssembly RNNoise Load & Integration
+      if (nsMode === 'rnnoise') {
+        try {
+          if (!rnnoiseBinaryRef.current) {
+            console.log("Lade RNNoise WASM von:", rnnoiseWasmPath);
+            rnnoiseBinaryRef.current = await loadRnnoise({ url: rnnoiseWasmPath, simdUrl: rnnoiseSimdPath });
+          }
+          if (!rnnoiseWorkletLoadedRef.current) {
+            console.log("Registriere RNNoise Worklet von:", rnnoiseWorkletPath);
+            await audioCtx.audioWorklet.addModule(rnnoiseWorkletPath);
+            rnnoiseWorkletLoadedRef.current = true;
+          }
+
+          const rnnoiseNode = new RnnoiseWorkletNode(audioCtx, {
+            wasmBinary: rnnoiseBinaryRef.current,
+            maxChannels: 1
+          });
+          currentNode.connect(rnnoiseNode);
+          currentNode = rnnoiseNode;
+          console.log("RNNoise WASM erfolgreich in Audio-Pfad eingebunden.");
+        } catch (wasmErr) {
+          console.error("Fehler beim Initialisieren der WASM Noise Suppression:", wasmErr);
+        }
+      }
+
       if (keyboardFilter) {
-        source.connect(hpf);
+        currentNode.connect(hpf);
         hpf.connect(gainNode);
       } else {
-        source.connect(gainNode);
+        currentNode.connect(gainNode);
       }
       gainNode.connect(destinationNode);
       
@@ -493,19 +627,22 @@ export const useWebRTC = () => {
           total += dataArray[i];
         }
         const average = total / bufferLength;
-        
-        const currentThreshold = noiseThresholdRef.current;
-        const isSpeaking = average > currentThreshold;
-        setLocalSpeaking(isSpeaking);
 
-        if (localGainNodeRef.current && audioCtx.state !== 'closed') {
-          if (isSpeaking) {
-            // Tor öffnen mit extrem schneller Rampe
-            localGainNodeRef.current.gain.setTargetAtTime(1.0, audioCtx.currentTime, 0.01);
-          } else {
-            // Tor sanft schließen nach kurzer Hold-Zeit
-            localGainNodeRef.current.gain.setTargetAtTime(0.0, audioCtx.currentTime, 0.05);
+        if (activationModeRef.current === 'vad') {
+          const currentThreshold = noiseThresholdRef.current;
+          const isSpeaking = average > currentThreshold;
+          setLocalSpeaking(isSpeaking);
+
+          if (localGainNodeRef.current && audioCtx.state !== 'closed') {
+            if (isSpeaking) {
+              localGainNodeRef.current.gain.setTargetAtTime(1.0, audioCtx.currentTime, 0.01);
+            } else {
+              localGainNodeRef.current.gain.setTargetAtTime(0.0, audioCtx.currentTime, 0.05);
+            }
           }
+        } else {
+          // In PTT mode, speaking state is controlled directly by key listeners
+          setLocalSpeaking(isPTTPressedRef.current);
         }
       }, 50);
     } catch (e) {
@@ -710,6 +847,7 @@ export const useWebRTC = () => {
     setUsername('');
     setRole('guest');
     setAccountKey(null);
+    setAvatar(null);
     setIsLoggedIn(false);
     setAdminUsersList([]);
     setOnlineUsers([]);
@@ -720,6 +858,12 @@ export const useWebRTC = () => {
   const changeNickname = (newNickname: string) => {
     if (socketRef.current && newNickname.trim()) {
       socketRef.current.emit('change-nickname', { nickname: newNickname.trim() });
+    }
+  };
+
+  const updateAvatar = (base64: string | null) => {
+    if (socketRef.current) {
+      socketRef.current.emit('update-avatar', { avatar: base64 });
     }
   };
 
@@ -748,7 +892,7 @@ export const useWebRTC = () => {
   const joinRoom = async (roomId: string) => {
     if (!socketRef.current) return;
     setJoinedRoomId(roomId);
-    await initLocalStream(noiseSuppression);
+    await initLocalStream(noiseSuppressionMode);
     socketRef.current.emit('join-room', {
       roomId,
       username,
@@ -802,10 +946,10 @@ export const useWebRTC = () => {
   };
 
   const toggleNoiseSuppression = () => {
-    const nextSuppression = !noiseSuppression;
-    setNoiseSuppression(nextSuppression);
+    const nextMode = noiseSuppressionMode === 'off' ? 'gate' : noiseSuppressionMode === 'gate' ? 'rnnoise' : 'off';
+    setNoiseSuppressionMode(nextMode);
     if (joinedRoomId) {
-      initLocalStream(nextSuppression);
+      initLocalStream(nextMode);
     }
   };
 
@@ -960,6 +1104,8 @@ export const useWebRTC = () => {
   return {
     username,
     role,
+    avatar,
+    updateAvatar,
     accountKey,
     isLoggedIn,
     channels,
@@ -972,7 +1118,13 @@ export const useWebRTC = () => {
     adminUsersList,
     onlineUsers,
     isMuted,
-    noiseSuppression,
+    activationMode,
+    setActivationMode,
+    pttKey,
+    setPttKey,
+    isPTTPressed,
+    noiseSuppressionMode,
+    setNoiseSuppressionMode,
     selfHearing,
     localSpeaking,
     createAccount,

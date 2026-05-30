@@ -42,9 +42,19 @@ export const init = async () => {
       table.string('accountKey', 100).primary();
       table.string('username', 100).unique().notNullable();
       table.string('role', 50).defaultTo('guest');
+      table.text('avatar', 'longtext').nullable();
     });
     console.log('Tabelle "users" erstellt.');
+  } else {
+    // Spalte 'avatar' nachträglich hinzufügen, falls sie fehlt
+    if (!(await knex.schema.hasColumn('users', 'avatar'))) {
+      await knex.schema.alterTable('users', (table) => {
+        table.text('avatar', 'longtext').nullable();
+      });
+      console.log('Spalte "avatar" zur Tabelle "users" hinzugefügt.');
+    }
   }
+
 
   if (!(await knex.schema.hasTable('private_messages'))) {
     await knex.schema.createTable('private_messages', (table) => {
@@ -60,22 +70,26 @@ export const init = async () => {
   }
 };
 
-export const saveUser = async (accountKey, username, role) => {
+export const saveUser = async (accountKey, username, role, avatar) => {
   const existing = await knex('users').where({ accountKey }).first();
   if (existing) {
-    await knex('users').where({ accountKey }).update({ username, role });
+    const updates = { username, role };
+    if (avatar !== undefined) updates.avatar = avatar;
+    await knex('users').where({ accountKey }).update(updates);
   } else {
-    await knex('users').insert({ accountKey, username, role });
+    await knex('users').insert({ accountKey, username, role, avatar: avatar || null });
   }
 };
+
 
 export const getUser = async (accountKey) => {
   return knex('users').where({ accountKey }).first();
 };
 
 export const getAllUsers = async () => {
-  return knex('users').select('username', 'role');
+  return knex('users').select('username', 'role', 'avatar');
 };
+
 
 export const savePrivateMessage = async (id, senderUsername, senderRole, receiverUsername, text, timestamp) => {
   await knex('private_messages').insert({

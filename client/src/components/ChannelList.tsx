@@ -29,7 +29,7 @@ interface ChannelListProps {
   onJoinTextRoom: (roomId: string) => void; // (Neu!)
   onCreateChannel: (name: string, minRole: string) => void;
   onCreateTextChannel: (name: string, minRole: string) => void; // (Neu!)
-  allUsers: Array<{ username: string; role: string; online: boolean; socketId: string | null }>; // Neu!
+  allUsers: Array<{ username: string; role: string; online: boolean; socketId: string | null; avatar?: string | null }>; // Neu!
   activePrivatePartner: string | null; // Neu!
   unreadDMs: { [username: string]: boolean }; // Neu!
   onSelectPrivatePartner: (partner: string | null) => void; // Neu!
@@ -370,23 +370,42 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                   >
                     {/* Lokaler User */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div
-                        style={{
-                          width: '24px',
-                          height: '24px',
-                          borderRadius: '50%',
-                          background: 'rgba(255,255,255,0.1)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '0.8rem',
-                          border: localSpeaking ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
-                          boxShadow: localSpeaking ? '0 0 8px #22c55e' : 'none',
-                          transition: 'all 0.15s ease'
-                        }}
-                      >
-                        {getRoleIcon(userRole)}
-                      </div>
+                      {(() => {
+                        const localAvatar = allUsers.find(u => u.username === localUsername)?.avatar;
+                        return localAvatar ? (
+                          <img 
+                            src={localAvatar} 
+                            alt={localUsername} 
+                            style={{ 
+                              width: '24px', 
+                              height: '24px', 
+                              borderRadius: '50%', 
+                              objectFit: 'cover',
+                              border: localSpeaking ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
+                              boxShadow: localSpeaking ? '0 0 8px #22c55e' : 'none',
+                              transition: 'all 0.15s ease'
+                            }} 
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '50%',
+                              background: 'rgba(255,255,255,0.1)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '0.8rem',
+                              border: localSpeaking ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
+                              boxShadow: localSpeaking ? '0 0 8px #22c55e' : 'none',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            {getRoleIcon(userRole)}
+                          </div>
+                        );
+                      })()}
                       <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>
                         {localUsername} ({t('channels.you')})
                       </span>
@@ -394,39 +413,57 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                     </div>
 
                     {/* Remote Users */}
-                    {remoteParticipants.map((p) => (
-                      <div
-                        key={p.socketId}
-                        style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectPrivatePartner(p.username);
-                        }}
-                        title={t('channels.dm_title', { name: p.username })}
-                      >
-
+                    {remoteParticipants.map((p) => {
+                      const pAvatar = allUsers.find(u => u.username === p.username)?.avatar;
+                      return (
                         <div
-                          style={{
-                            width: '24px',
-                            height: '24px',
-                            borderRadius: '50%',
-                            background: 'rgba(255,255,255,0.1)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '0.8rem',
-                            border: p.isSpeaking ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
-                            boxShadow: p.isSpeaking ? '0 0 8px #22c55e' : 'none',
-                            transition: 'all 0.15s ease'
+                          key={p.socketId}
+                          style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectPrivatePartner(p.username);
                           }}
+                          title={t('channels.dm_title', { name: p.username })}
                         >
-                          {getRoleIcon(p.role)}
+                          {pAvatar ? (
+                            <img 
+                              src={pAvatar} 
+                              alt={p.username} 
+                              style={{ 
+                                width: '24px', 
+                                height: '24px', 
+                                borderRadius: '50%', 
+                                objectFit: 'cover',
+                                border: p.isSpeaking ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
+                                boxShadow: p.isSpeaking ? '0 0 8px #22c55e' : 'none',
+                                transition: 'all 0.15s ease'
+                              }} 
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width: '24px',
+                                height: '24px',
+                                borderRadius: '50%',
+                                background: 'rgba(255,255,255,0.1)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '0.8rem',
+                                border: p.isSpeaking ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
+                                boxShadow: p.isSpeaking ? '0 0 8px #22c55e' : 'none',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              {getRoleIcon(p.role)}
+                            </div>
+                          )}
+                          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                            {p.username} 💬
+                          </span>
                         </div>
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                          {p.username} 💬
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -483,9 +520,50 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: u.online ? '#22c55e' : '#64748b', fontSize: '0.75rem' }}>
-                        {u.online ? '🟢' : '⚪'}
-                      </span>
+                      <div style={{ position: 'relative', width: '28px', height: '28px' }}>
+                        {u.avatar ? (
+                          <img 
+                            src={u.avatar} 
+                            alt={u.username} 
+                            style={{ 
+                              width: '28px', 
+                              height: '28px', 
+                              borderRadius: '50%', 
+                              objectFit: 'cover'
+                            }} 
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '50%',
+                              backgroundColor: 'rgba(255,255,255,0.08)',
+                              border: '1px solid rgba(255,255,255,0.15)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              color: 'var(--accent-color)'
+                            }}
+                          >
+                            {u.username.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div 
+                          style={{
+                            position: 'absolute',
+                            bottom: '-1px',
+                            right: '-1px',
+                            width: '9px',
+                            height: '9px',
+                            borderRadius: '50%',
+                            background: u.online ? '#22c55e' : '#64748b',
+                            border: '1.5px solid var(--bg-primary)'
+                          }}
+                        />
+                      </div>
                       <span>{u.username}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
