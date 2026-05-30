@@ -1,0 +1,25 @@
+services:
+  echo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: echo-server
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - DB_TYPE=sqlite
+      - DB_FILE_PATH=/app/server/data/echo.sqlite
+      # Für MariaDB-Nutzung, einkommentieren und anpassen:
+      # - DB_TYPE=mariadb
+      # - DB_HOST=db-host-ip
+      # - DB_PORT=3306
+      # - DB_USER=echo
+      # - DB_PASS=secret
+      # - DB_NAME=echo_db
+    volumes:
+      - echo-data:/app/server/data
+    restart: unless-stopped
+
+volumes:
+  echo-data:
