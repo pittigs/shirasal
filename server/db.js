@@ -17,9 +17,9 @@ export const init = async () => {
       connection: {
         host: process.env.DB_HOST || '127.0.0.1',
         port: Number(process.env.DB_PORT) || 3306,
-        user: process.env.DB_USER || 'echo',
+        user: process.env.DB_USER || 'shirasal',
         password: process.env.DB_PASS || 'secret',
-        database: process.env.DB_NAME || 'echo_db'
+        database: process.env.DB_NAME || 'shirasal_db'
       }
     };
     console.log(`Verbinde mit MariaDB-Datenbank: ${config.connection.database} auf ${config.connection.host}`);
@@ -27,7 +27,7 @@ export const init = async () => {
     config = {
       client: 'sqlite3',
       connection: {
-        filename: process.env.DB_FILE_PATH || path.join(__dirname, 'echo.sqlite')
+        filename: process.env.DB_FILE_PATH || path.join(__dirname, 'shirasal.sqlite')
       },
       useNullAsDefault: true
     };

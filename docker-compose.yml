@@ -1,25 +1,25 @@
 services:
-  echo:
+  shirasal:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: echo-server
+    container_name: shirasal-server
     ports:
       - "3001:3001"
     environment:
       - NODE_ENV=production
       - DB_TYPE=sqlite
-      - DB_FILE_PATH=/app/server/data/echo.sqlite
+      - DB_FILE_PATH=/app/server/data/shirasal.sqlite
       # Für MariaDB-Nutzung, einkommentieren und anpassen:
       # - DB_TYPE=mariadb
       # - DB_HOST=db-host-ip
       # - DB_PORT=3306
-      # - DB_USER=echo
+      # - DB_USER=shirasal
       # - DB_PASS=secret
-      # - DB_NAME=echo_db
+      # - DB_NAME=shirasal_db
     volumes:
-      - echo-data:/app/server/data
+      - shirasal-data:/app/server/data
     restart: unless-stopped
 
 volumes:
-  echo-data:
+  shirasal-data:

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="client/src/assets/logo.png" alt="Echo Logo" width="120" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.2);" />
+  <img src="client/src/assets/logo.png" alt="ShirAsal Logo" width="120" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.2);" />
 </p>
 
-<h1 align="center">Echo</h1>
+<h1 align="center">ShirAsal</h1>
 
 <p align="center">
   <strong>A premium, self-hosted, neon-glassmorphic alternative to Discord and TeamSpeak.</strong><br />
@@ -54,7 +54,7 @@
 
 ## 🚀 Quick Start
 
-Echo can be deployed locally using helper scripts or via Docker.
+ShirAsal can be deployed locally using helper scripts or via Docker.
 
 ### Option A: Using Docker Compose (Recommended)
 Make sure you have Docker and Docker Compose installed, then run:
@@ -78,9 +78,9 @@ You can run the launcher scripts directly:
 ---
 
 ## 💾 Database Configuration
-Echo uses **Knex** to support dual database configurations in `server/.env`:
+ShirAsal uses **Knex** to support dual database configurations in `server/.env`:
 
-1. **SQLite (Default):** Zero configuration, saves data to `server/echo.sqlite`.
+1. **SQLite (Default):** Zero configuration, saves data to `server/shirasal.sqlite`.
    ```env
    DB_TYPE=sqlite
    ```
@@ -89,9 +89,9 @@ Echo uses **Knex** to support dual database configurations in `server/.env`:
    DB_TYPE=mariadb
    DB_HOST=127.0.0.1
    DB_PORT=3306
-   DB_USER=echo_user
+   DB_USER=shirasal_user
    DB_PASS=your_secure_password
-   DB_NAME=echo_db
+   DB_NAME=shirasal_db
    ```
 
 ---
@@ -104,7 +104,7 @@ Echo uses **Knex** to support dual database configurations in `server/.env`:
 ---
 
 ## 🗺️ Roadmap / To-Do
-Here are the planned features for future releases of **Echo**:
+Here are the planned features for future releases of **ShirAsal**:
 
 - [x] **Custom Avatars (including Animated GIFs):** Allow users to upload profile pictures (supporting PNG, JPEG, and animated GIFs) to be displayed next to their names in channels and chat. *(Released in v1.0.1)*
 - [x] **Push-to-Talk (PTT):** Support custom hotkeys for Push-To-Talk voice transmission. *(Released in v1.0.1)*

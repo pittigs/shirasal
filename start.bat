@@ -1,5 +1,5 @@
 @echo off
-echo Echo wird gestartet...
+echo ShirAsal wird gestartet...
 echo.
 
 :: Pfad zur portablen Node-Umgebung setzen
@@ -15,14 +15,14 @@ if not exist "%~dp0node-env" (
 
 :: Starten des Backends in eigenem Fenster
 echo Starte Backend-Signaling-Server...
-start "Echo Backend" cmd /c "cd server && npm run dev"
+start "ShirAsal Backend" cmd /c "cd server && npm run dev"
 
 :: Starten des Frontends in eigenem Fenster
 echo Starte Frontend-React-Client...
-start "Echo Frontend" cmd /c "cd client && npm run dev"
+start "ShirAsal Frontend" cmd /c "cd client && npm run dev"
 
 echo.
-echo Echo wurde erfolgreich gestartet!
+echo ShirAsal wurde erfolgreich gestartet!
 echo Bitte oeffne http://localhost:5173 in deinem Browser.
 echo.
 pause
