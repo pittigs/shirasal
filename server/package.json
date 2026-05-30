@@ -1,0 +1,23 @@
+{
+  "name": "voice-chat-server",
+  "version": "1.0.0",
+  "description": "Signaling and Chat server for Voice-Chat app",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.19.2",
+    "knex": "^3.2.10",
+    "mysql2": "^3.22.4",
+    "socket.io": "^4.7.5",
+    "sqlite3": "^6.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

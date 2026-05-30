@@ -1,0 +1,29 @@
+# Dependency directories
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Local Node environment binaries
+node-env/
+
+# Production build outputs
+client/dist/
+
+# Local configuration
+server/.env
+.env
+
+# SQLite Databases
+server/*.sqlite
+*.sqlite
+
+# Logs
+*.log
+logs/
+.system_generated/
+
+# OS/Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
