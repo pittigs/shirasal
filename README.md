@@ -103,5 +103,19 @@ Echo uses **Knex** to support dual database configurations in `server/.env`:
 
 ---
 
+## 🗺️ Roadmap / To-Do
+Here are the planned features for future releases of **Echo**:
+
+- [ ] **Custom Avatars (including Animated GIFs):** Allow users to upload profile pictures (supporting PNG, JPEG, and animated GIFs) to be displayed next to their names in channels and chat.
+- [ ] **Push-to-Talk (PTT):** Support custom hotkeys for Push-To-Talk voice transmission.
+- [ ] **WebAssembly Noise Suppression:** Implement deep-learning-based noise suppression (e.g., RNNoise via WASM) to filter out typing sounds and background noise.
+- [ ] **Advanced Dynamic Roles:** A full role editor allowing admins to create custom roles, colors, and granular permission sets.
+- [ ] **Emoji Reactions:** React to messages in text channels and direct messages with emojis.
+- [ ] **Screen Share Audio:** Capture and stream system/tab audio alongside video during screen sharing.
+- [ ] **Message Search:** Search through channel history and direct messages.
+
+---
+
 ## 📄 License
 This project is licensed under the MIT License. See the LICENSE file for details.
+
