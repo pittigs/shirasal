@@ -1,6 +1,6 @@
-# Echo - Fehlerbehebung & Administrations-Handbuch (Troubleshooting Guide)
+# ShirAsal - Fehlerbehebung & Administrations-Handbuch (Troubleshooting Guide)
 
-Dieses Dokument bietet Hilfestellung bei der Installation, Konfiguration und Behebung typischer Probleme mit **Echo**.
+Dieses Dokument bietet Hilfestellung bei der Installation, Konfiguration und Behebung typischer Probleme mit **ShirAsal**.
 
 ---
 
@@ -27,7 +27,7 @@ Dieses Dokument bietet Hilfestellung bei der Installation, Konfiguration und Beh
 ### Mikrofon oder Kamera/Bildschirm wird nicht erkannt
 1. **Berechtigungen prüfen:** Der Browser muss die Berechtigung besitzen, auf das Mikrofon und die Bildschirmübertragung zuzugreifen. Wenn Sie die Seite das erste Mal laden, akzeptieren Sie die Berechtigungsanfrage. In Chrome/Firefox können Sie diese links neben der URL-Leiste (Schlosssymbol) überprüfen.
 2. **Kein HTTPS in Produktion:** Browser blockieren Mikrofon-Zugriffe (`getUserMedia`) und Bildschirmfreigaben (`getDisplayMedia`) auf ungesicherten Verbindungen. Im lokalen Betrieb (`localhost`) ist der Zugriff standardmäßig erlaubt. Für eine Produktions-Bereitstellung ist ein SSL-Zertifikat (HTTPS) zwingend erforderlich (z. B. via Let's Encrypt).
-3. **Stummschaltung:** Prüfen Sie, ob Sie im Echo-UI stummgeschaltet sind (roter Button "Stumm" im Profilbereich) oder ob Ihr Systemmikrofon stummgeschaltet ist.
+3. **Stummschaltung:** Prüfen Sie, ob Sie im ShirAsal-UI stummgeschaltet sind (roter Button "Stumm" im Profilbereich) oder ob Ihr Systemmikrofon stummgeschaltet ist.
 
 ### Rückkopplung / Pfeifen (Larsen-Effekt)
 Wenn Sie die Option **"Selber hören" (Echomodus)** aktivieren, hören Sie Ihr eigenes Mikrofon-Signal. 
@@ -35,7 +35,7 @@ Wenn Sie die Option **"Selber hören" (Echomodus)** aktivieren, hören Sie Ihr e
 > Verwenden Sie bei eingeschaltetem Echomodus unbedingt Kopfhörer! Andernfalls wird der Ton der Lautsprecher wieder vom Mikrofon aufgenommen, was zu einer lauten, unangenehmen akustischen Schleife (Pfeifen) führt.
 
 ### Mikrofon klingt abgehackt, roboterhaft oder dumpf
-Echo bietet eine Reihe von professionellen Hardware- und Software-Filtern, um die Qualität anzupassen:
+ShirAsal bietet eine Reihe von professionellen Hardware- und Software-Filtern, um die Qualität anzupassen:
 1. **Voice Activation Threshold (Noise Gate):** Der Regler bestimmt die Empfindlichkeit, ab der Ihre Stimme übertragen wird. Wenn Sie abgehackt klingen, stellen Sie den Regler weiter nach links (niedrigerer Schwellenwert). Wenn Hintergrundgeräusche übertragen werden, schieben Sie ihn weiter nach rechts.
 2. **Echo-Kompensation (AEC - Acoustic Echo Cancellation):** Verhindert, dass der Ton der anderen Benutzer aus Ihren Lautsprechern wieder in Ihr Mikrofon gelangt. Sollten Sie ein sehr gutes Headset oder Studiomikrofon besitzen und AEC die Stimme verzerrt, schalten Sie AEC in den Audio-Einstellungen aus.
 3. **Auto-Verstärkung (AGC - Automatic Gain Control):** Passt die Lautstärke Ihrer Stimme automatisch an. Kann bei manchen empfindlichen Mikrofonen zu Rauschen führen. Versuchen Sie, AGC zu deaktivieren, falls Ihr Ton übersteuert.
@@ -48,12 +48,12 @@ Echo bietet eine Reihe von professionellen Hardware- und Software-Filtern, um di
 
 ## 3. Datenbank-Konfiguration (SQLite vs. MariaDB)
 
-Echo nutzt **Knex** als SQL-Query-Builder und unterstützt sowohl eine dateibasierte SQLite-Datenbank als auch eine produktionsbereite MariaDB (oder MySQL).
+ShirAsal nutzt **Knex** als SQL-Query-Builder und unterstützt sowohl eine dateibasierte SQLite-Datenbank als auch eine produktionsbereite MariaDB (oder MySQL).
 
 Die Konfiguration erfolgt im Verzeichnis `server/` über die `.env`-Datei. Eine Vorlage finden Sie in `server/.env.example`.
 
 ### Option A: SQLite (Standard, Konfigurationsfrei)
-Perfekt für Tests oder kleine Server. Es wird eine lokale Datei `server/echo.sqlite` erstellt.
+Perfekt für Tests oder kleine Server. Es wird eine lokale Datei `server/shirasal.sqlite` erstellt.
 ```env
 DB_TYPE=sqlite
 ```
@@ -64,11 +64,11 @@ Für den performanten Betrieb mit vielen Benutzern.
 DB_TYPE=mariadb
 DB_HOST=127.0.0.1
 DB_PORT=3306
-DB_USER=echo_user
+DB_USER=shirasal_user
 DB_PASS=IhrSicheresPasswort
-DB_NAME=echo_db
+DB_NAME=shirasal_db
 ```
-*Stellen Sie sicher, dass die MariaDB-Instanz läuft und die Datenbank `echo_db` existiert. Die Tabellen werden beim Start des Servers automatisch über Knex-Migrationen generiert.*
+*Stellen Sie sicher, dass die MariaDB-Instanz läuft und die Datenbank `shirasal_db` existiert. Die Tabellen werden beim Start des Servers automatisch über Knex-Migrationen generiert.*
 
 ---
 
@@ -78,18 +78,18 @@ WebRTC stellt direkte Peer-to-Peer-Verbindungen zwischen den Clients für die Au
 
 ### Symptom: Benutzer sehen sich, hören oder empfangen aber keine Videos
 Wenn Benutzer zwar Text-Nachrichten austauschen und die Kanalliste aktualisiert sehen, aber keine Medienströme ankommen (der WebRTC-Verbindungsstatus schlägt fehl):
-1. **STUN/TURN-Server:** Echo nutzt standardmäßig öffentliche Google STUN-Server in `useWebRTC.ts`. In stark restriktiven Firmennetzwerken (symmetrisches NAT / restriktive Firewalls) blockieren diese jedoch. Hier muss ein eigener TURN-Server (z. B. **coturn**) aufgesetzt und in der `rtcConfig` in `client/src/hooks/useWebRTC.ts` eingetragen werden.
+1. **STUN/TURN-Server:** ShirAsal nutzt standardmäßig öffentliche Google STUN-Server in `useWebRTC.ts`. In stark restriktiven Firmennetzwerken (symmetrisches NAT / restriktive Firewalls) blockieren diese jedoch. Hier muss ein eigener TURN-Server (z. B. **coturn**) aufgesetzt und in der `rtcConfig` in `client/src/hooks/useWebRTC.ts` eingetragen werden.
 2. **Portweiterleitung / Firewall:** 
    * Der Express-Server läuft standardmäßig auf Port **3001** (sowohl für Socket.io-Signaling als auch für statische Dateien im Produktionsmodus). Dieser Port muss in Ihrer Firewall geöffnet sein.
    * WebRTC benötigt zusätzlich dynamische UDP-Ports für den Audiotransfer. Stellen Sie sicher, dass ausgehende UDP-Pakete nicht durch Ihre lokale Firewall blockiert werden.
 
 ### Reverse Proxy Setup (z. B. Nginx)
-Wenn Sie Echo hinter Nginx betreiben, müssen Sie sicherstellen, dass WebSockets korrekt weitergeleitet werden. 
+Wenn Sie ShirAsal hinter Nginx betreiben, müssen Sie sicherstellen, dass WebSockets korrekt weitergeleitet werden. 
 Beispiel-Nginx-Konfiguration:
 ```nginx
 server {
     listen 80;
-    server_name echo.example.com;
+    server_name shirasal.example.com;
 
     location / {
         proxy_pass http://127.0.0.1:3001;
@@ -109,7 +109,7 @@ server {
 ## 5. Docker- & Plattform-Spezifika
 
 ### Starten mit Docker Compose
-Echo kann über ein Multi-Stage Dockerfile in einem einzigen Container bereitgestellt werden.
+ShirAsal kann über ein Multi-Stage Dockerfile in einem einzigen Container bereitgestellt werden.
 ```bash
 docker compose up --build -d
 ```
@@ -119,7 +119,7 @@ Der Container kompiliert das React-Frontend und fügt es in das Node-Backend ein
 Wenn Sie SQLite innerhalb von Docker nutzen und die Daten bei Container-Updates nicht verlieren möchten, binden Sie die SQLite-Datei als Docker Volume ein:
 ```yaml
 volumes:
-  - ./server/echo.sqlite:/app/server/data/echo.sqlite
+  - ./server/shirasal.sqlite:/app/server/data/shirasal.sqlite
 ```
 
 ---

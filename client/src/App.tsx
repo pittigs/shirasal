@@ -347,7 +347,7 @@ export const App: React.FC = () => {
           }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-            <img src={logo} alt="Echo Logo" style={{ height: '72px', width: '72px', borderRadius: '16px', boxShadow: '0 0 20px rgba(var(--accent-rgb), 0.4)', marginBottom: '8px' }} />
+            <img src={logo} alt="ShirAsal Logo" style={{ height: '72px', width: '72px', borderRadius: '16px', boxShadow: '0 0 20px rgba(var(--accent-rgb), 0.4)', marginBottom: '8px' }} />
             <h1
               style={{
                 fontSize: '2.5rem',
@@ -360,7 +360,7 @@ export const App: React.FC = () => {
                 lineHeight: 1
               }}
             >
-              Echo
+              ShirAsal
             </h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
               {t('login.subtitle')}
@@ -582,7 +582,7 @@ export const App: React.FC = () => {
               letterSpacing: '-0.5px'
             }}
           >
-            Echo
+            ShirAsal
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
             {t('login.subtitle')}

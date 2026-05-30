@@ -20,7 +20,7 @@ const translations = {
       edit_name_title: 'Name ändern'
     },
     login: {
-      title: 'Echo',
+      title: 'ShirAsal',
       subtitle: 'OpenSource Voice & Video Chat',
       register_tab: 'Konto erstellen',
       login_tab: 'Mit Key einloggen',
@@ -147,7 +147,7 @@ const translations = {
       edit_name_title: 'Change Name'
     },
     login: {
-      title: 'Echo',
+      title: 'ShirAsal',
       subtitle: 'OpenSource Voice & Video Chat',
       register_tab: 'Create Account',
       login_tab: 'Log in with Key',
@@ -272,7 +272,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   useEffect(() => {
     // 1. Aus LocalStorage laden
-    const saved = localStorage.getItem('echo-language');
+    const saved = localStorage.getItem('shirasal-language');
     if (saved === 'de' || saved === 'en') {
       setLanguageState(saved);
     } else {
@@ -280,13 +280,13 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const browserLang = navigator.language.substring(0, 2);
       const initialLang: Language = browserLang === 'en' ? 'en' : 'de';
       setLanguageState(initialLang);
-      localStorage.setItem('echo-language', initialLang);
+      localStorage.setItem('shirasal-language', initialLang);
     }
   }, []);
 
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
-    localStorage.setItem('echo-language', lang);
+    localStorage.setItem('shirasal-language', lang);
     // Optional: Ändert das lang-Attribut im HTML-Tag für Barrierefreiheit/Browser-Übersetzung
     document.documentElement.lang = lang;
   };
