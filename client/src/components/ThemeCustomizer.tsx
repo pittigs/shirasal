@@ -139,7 +139,7 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({ onChangeLayout
   };
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', zIndex: 150 }}>
       {/* Schwebender Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
@@ -174,7 +174,8 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({ onChangeLayout
             flexDirection: 'column',
             gap: '16px',
             maxHeight: '80vh',
-            overflowY: 'auto'
+            overflowY: 'auto',
+            zIndex: 150
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

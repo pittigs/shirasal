@@ -117,7 +117,8 @@ const broadcastOnlineUsersToAll = () => {
   const simplifiedList = Object.values(connectedUsers).map((u) => ({
     socketId: u.socketId,
     username: u.username,
-    role: u.role
+    role: u.role,
+    avatar: u.avatar || null
   }));
   io.emit('online-users-list', simplifiedList);
 };
@@ -131,6 +132,7 @@ const broadcastAllUsersToAll = async () => {
       return {
         username: u.username,
         role: u.role,
+        avatar: u.avatar || null,
         online: !!onlineUser,
         socketId: onlineUser ? onlineUser.socketId : null
       };
@@ -161,6 +163,7 @@ io.on('connection', (socket) => {
       return {
         username: u.username,
         role: u.role,
+        avatar: u.avatar || null,
         online: !!onlineUser,
         socketId: onlineUser ? onlineUser.socketId : null
       };
@@ -194,21 +197,24 @@ io.on('connection', (socket) => {
     const newUser = {
       accountKey,
       username,
-      role: chosenRole
+      role: chosenRole,
+      avatar: null
     };
 
     try {
-      await db.saveUser(accountKey, username, chosenRole);
+      await db.saveUser(accountKey, username, chosenRole, null);
       console.log(`Account erstellt: ${username} (${chosenRole})`);
       
       socket.data.username = username;
       socket.data.role = chosenRole;
       socket.data.accountKey = accountKey;
+      socket.data.avatar = null;
       
       connectedUsers[socket.id] = {
         socketId: socket.id,
         username,
         role: chosenRole,
+        avatar: null,
         accountKey,
         currentRoom: null,
         currentTextRoom: 'general'
@@ -233,11 +239,13 @@ io.on('connection', (socket) => {
         socket.data.username = user.username;
         socket.data.role = user.role;
         socket.data.accountKey = accountKey;
+        socket.data.avatar = user.avatar || null;
 
         connectedUsers[socket.id] = {
           socketId: socket.id,
           username: user.username,
           role: user.role,
+          avatar: user.avatar || null,
           accountKey,
           currentRoom: null,
           currentTextRoom: 'general'
@@ -253,6 +261,25 @@ io.on('connection', (socket) => {
     } catch (err) {
       console.error(err);
       socket.emit('login-error', 'Datenbankfehler beim Login.');
+    }
+  });
+
+  socket.on('update-avatar', async ({ avatar }) => {
+    const username = socket.data.username;
+    const key = socket.data.accountKey;
+    if (!key) return;
+
+    try {
+      await db.saveUser(key, username, socket.data.role, avatar);
+      socket.data.avatar = avatar;
+      if (connectedUsers[socket.id]) {
+        connectedUsers[socket.id].avatar = avatar;
+      }
+      socket.emit('avatar-updated', { avatar });
+      await broadcastUsersState();
+    } catch (err) {
+      console.error("Fehler beim Aktualisieren des Avatars:", err);
+      socket.emit('error-msg', 'Fehler beim Speichern des Avatars.');
     }
   });
 

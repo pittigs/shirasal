@@ -15,6 +15,8 @@ export const App: React.FC = () => {
 
     username,
     role,
+    avatar,
+    updateAvatar,
     accountKey,
     isLoggedIn,
     channels,
@@ -26,9 +28,14 @@ export const App: React.FC = () => {
     adminUsersList,
     onlineUsers, // Vereinfachte Liste für Laufband
     isMuted,
-    noiseSuppression,
     selfHearing,
     localSpeaking,
+    activationMode,
+    setActivationMode,
+    pttKey,
+    setPttKey,
+    isPTTPressed,
+    noiseSuppressionMode,
     createAccount,
     loginWithKey,
     logout,
@@ -75,6 +82,25 @@ export const App: React.FC = () => {
     setLayout({ chatVisible: visible, chatPosition: position });
   };
 
+  // Load and apply custom theme settings on startup (forces consistent styling on login screen)
+  React.useEffect(() => {
+    const saved = localStorage.getItem('voicechat-theme-settings');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        const root = document.documentElement;
+        if (parsed.bgValue) root.style.setProperty('--bg-primary', parsed.bgValue);
+        if (parsed.accentColor) root.style.setProperty('--accent-color', parsed.accentColor);
+        if (parsed.accentRgb) root.style.setProperty('--accent-rgb', parsed.accentRgb);
+        if (parsed.glassBlur !== undefined) root.style.setProperty('--glass-blur', `${parsed.glassBlur}px`);
+        if (parsed.borderRadius !== undefined) root.style.setProperty('--border-radius', `${parsed.borderRadius}px`);
+      } catch (e) {
+        console.error('Failed to load startup theme:', e);
+      }
+    }
+  }, []);
+
+
   const [activeTab, setActiveTab] = useState<'register' | 'login'>('register');
   const [chosenRole, setChosenRole] = useState('guest'); // guest, member, admin
   const [inputKey, setInputKey] = useState('');
@@ -85,6 +111,65 @@ export const App: React.FC = () => {
   // States für eigene Nickname-Bearbeitung
   const [isEditingName, setIsEditingName] = useState(false);
   const [newNameInput, setNewNameInput] = useState('');
+
+  const [isBindingKey, setIsBindingKey] = useState(false);
+
+  const handleStartBinding = () => {
+    setIsBindingKey(true);
+  };
+
+  React.useEffect(() => {
+    if (!isBindingKey) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setPttKey(e.key);
+      setIsBindingKey(false);
+    };
+
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, { capture: true });
+    };
+  }, [isBindingKey]);
+
+  const avatarInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isGif = file.type === 'image/gif';
+    const isSmallGif = isGif && file.size <= 150 * 1024; // 150KB
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      if (isSmallGif) {
+        updateAvatar(result);
+      } else {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const size = 96;
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            const minSide = Math.min(img.width, img.height);
+            const sx = (img.width - minSide) / 2;
+            const sy = (img.height - minSide) / 2;
+            ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+            const compressed = canvas.toDataURL('image/jpeg', 0.6);
+            updateAvatar(compressed);
+          }
+        };
+        img.src = result;
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,7 +213,7 @@ export const App: React.FC = () => {
           padding: '20px'
         }}
       >
-        <ThemeCustomizer onChangeLayout={handleLayoutChange} />
+
         
         <div
           className="glass-panel fade-in"
@@ -247,7 +332,7 @@ export const App: React.FC = () => {
           padding: '20px'
         }}
       >
-        <ThemeCustomizer onChangeLayout={handleLayoutChange} />
+
         
         <div
           className="glass-panel fade-in"
@@ -525,10 +610,69 @@ export const App: React.FC = () => {
           {/* User Profile Card */}
           <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '1.2rem' }}>
-                  {role === 'admin' ? '👑' : role === 'member' ? '🛡️' : '👤'}
-                </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => avatarInputRef.current?.click()}>
+                  {avatar ? (
+                    <img 
+                      src={avatar} 
+                      alt={username} 
+                      style={{ 
+                        width: '46px', 
+                        height: '46px', 
+                        borderRadius: '50%', 
+                        objectFit: 'cover', 
+                        border: '2px solid var(--accent-color)',
+                        boxShadow: '0 0 10px rgba(var(--accent-rgb), 0.3)'
+                      }} 
+                    />
+                  ) : (
+                    <div 
+                      style={{ 
+                        width: '46px', 
+                        height: '46px', 
+                        borderRadius: '50%', 
+                        backgroundColor: 'rgba(255, 255, 255, 0.08)', 
+                        border: '2px solid rgba(255, 255, 255, 0.2)',
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        fontSize: '1.2rem',
+                        fontWeight: 700,
+                        color: 'var(--accent-color)'
+                      }}
+                    >
+                      {username ? username.charAt(0).toUpperCase() : '?'}
+                    </div>
+                  )}
+                  <div 
+                    style={{
+                      position: 'absolute',
+                      bottom: '-2px',
+                      right: '-2px',
+                      background: 'var(--accent-color)',
+                      borderRadius: '50%',
+                      width: '18px',
+                      height: '18px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.65rem',
+                      border: '1px solid var(--bg-primary)'
+                    }}
+                    title="Avatar ändern"
+                  >
+                    📷
+                  </div>
+                </div>
+                
+                <input 
+                  type="file" 
+                  ref={avatarInputRef} 
+                  onChange={handleAvatarChange} 
+                  accept="image/*" 
+                  style={{ display: 'none' }} 
+                />
+
                 <div>
                   {/* Name (Editierbar!) */}
                   {isEditingName ? (
@@ -548,6 +692,7 @@ export const App: React.FC = () => {
                     </form>
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '0.9rem' }}>{role === 'admin' ? '👑' : role === 'member' ? '🛡️' : '👤'}</span>
                       <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff' }}>{username}</h4>
                       <button
                         onClick={() => {
@@ -601,11 +746,15 @@ export const App: React.FC = () => {
                     flex: 1,
                     padding: '8px 12px',
                     fontSize: '0.8rem',
-                    borderColor: noiseSuppression ? 'var(--accent-color)' : 'rgba(255,255,255,0.1)',
-                    background: noiseSuppression ? 'rgba(var(--accent-rgb), 0.15)' : 'rgba(255,255,255,0.04)'
+                    borderColor: noiseSuppressionMode !== 'off' ? 'var(--accent-color)' : 'rgba(255,255,255,0.1)',
+                    background: noiseSuppressionMode !== 'off' ? 'rgba(var(--accent-rgb), 0.15)' : 'rgba(255,255,255,0.04)'
                   }}
                 >
-                  {noiseSuppression ? t('controls.filter_on') : t('controls.filter_off')}
+                  {noiseSuppressionMode === 'off' 
+                    ? (language === 'de' ? 'Filter: Aus' : 'Filter: Off') 
+                    : noiseSuppressionMode === 'gate' 
+                      ? (language === 'de' ? 'Filter: Gate' : 'Filter: Gate') 
+                      : (language === 'de' ? 'Filter: KI (WASM)' : 'Filter: AI (WASM)')}
                 </button>
               </div>
 
@@ -677,6 +826,72 @@ export const App: React.FC = () => {
 
               {/* Advanced Audio Calibration */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                {/* Transmission Mode Settings */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingBottom: '6px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '2px' }}>
+                    {language === 'de' ? 'Aktivierungsmodus' : 'Activation Mode'}
+                  </span>
+                  
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setActivationMode('vad')}
+                      className="btn-secondary"
+                      style={{
+                        flex: 1,
+                        padding: '4px 8px',
+                        fontSize: '0.75rem',
+                        borderColor: activationMode === 'vad' ? 'var(--accent-color)' : 'rgba(255,255,255,0.1)',
+                        background: activationMode === 'vad' ? 'rgba(var(--accent-rgb), 0.15)' : 'rgba(255,255,255,0.04)',
+                        color: '#fff'
+                      }}
+                    >
+                      🗣️ {language === 'de' ? 'Sprache' : 'Voice'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActivationMode('ptt')}
+                      className="btn-secondary"
+                      style={{
+                        flex: 1,
+                        padding: '4px 8px',
+                        fontSize: '0.75rem',
+                        borderColor: activationMode === 'ptt' ? 'var(--accent-color)' : 'rgba(255,255,255,0.1)',
+                        background: activationMode === 'ptt' ? 'rgba(var(--accent-rgb), 0.15)' : 'rgba(255,255,255,0.04)',
+                        color: '#fff'
+                      }}
+                    >
+                      🔘 PTT
+                    </button>
+                  </div>
+
+                  {activationMode === 'ptt' && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', background: 'rgba(0,0,0,0.15)', padding: '6px', borderRadius: '6px' }}>
+                      <span style={{ fontSize: '0.75rem', color: '#fff' }}>Hotkey:</span>
+                      <button
+                        type="button"
+                        onClick={handleStartBinding}
+                        className="btn-primary"
+                        style={{
+                          padding: '2px 8px',
+                          fontSize: '0.72rem',
+                          background: isBindingKey ? '#eab308' : 'var(--accent-color)',
+                          border: 'none',
+                          borderRadius: '4px',
+                          color: '#fff',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {isBindingKey 
+                          ? (language === 'de' ? 'Drücke Taste...' : 'Press key...') 
+                          : pttKey === ' ' 
+                            ? (language === 'de' ? 'Leertaste' : 'Space') 
+                            : pttKey.toUpperCase()}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '2px' }}>
                   {t('controls.advanced_calibration')}
                 </span>
@@ -770,6 +985,34 @@ export const App: React.FC = () => {
                 </span>
 
                 <AudioVisualizer analyser={localAnalyser} isMuted={isMuted} />
+
+                {activationMode === 'ptt' && (
+                  <div 
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      gap: '6px', 
+                      fontSize: '0.75rem', 
+                      background: isPTTPressed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255,255,255,0.02)', 
+                      border: isPTTPressed ? '1px solid #22c55e' : '1px solid rgba(255,255,255,0.06)',
+                      borderRadius: '6px', 
+                      padding: '4px',
+                      marginTop: '6px',
+                      color: isPTTPressed ? '#22c55e' : 'var(--text-secondary)'
+                    }}
+                  >
+                    <span style={{ fontSize: '0.8rem' }}>{isPTTPressed ? '🟢' : '🔴'}</span>
+                    <strong>
+                      {isPTTPressed 
+                        ? (language === 'de' ? 'SENDEN AKTIV' : 'TRANSMITTING') 
+                        : (language === 'de' ? 'PTT GEHALTEN' : 'PTT IDLE')}
+                    </strong>
+                    <span style={{ fontSize: '0.65rem', opacity: 0.8 }}>
+                      ({pttKey === ' ' ? (language === 'de' ? 'Leertaste' : 'Space') : pttKey.toUpperCase()})
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -909,6 +1152,7 @@ export const App: React.FC = () => {
               currentUser={username}
               title={activePrivatePartner ? `PN mit @${activePrivatePartner}` : undefined}
               placeholder={activePrivatePartner ? `Nachricht an @${activePrivatePartner}...` : undefined}
+              allUsers={allUsers}
             />
           </div>
 
