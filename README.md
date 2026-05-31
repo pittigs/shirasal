@@ -14,7 +14,14 @@
   <img src="https://img.shields.io/badge/WebRTC-Encrypted-success.svg" alt="WebRTC" />
   <img src="https://img.shields.io/badge/React-TypeScript-blue.svg" alt="React TS" />
   <img src="https://img.shields.io/badge/Docker-Compatible-blue.svg" alt="Docker" />
+  <a href="https://demo.shirasal.eu"><img src="https://img.shields.io/badge/Live%20Demo-demo.shirasal.eu-blueviolet?style=flat&logo=react" alt="Live Demo" /></a>
 </p>
+
+## 🎮 Try it Live
+You can test ShirAsal directly in your browser without installing anything:
+👉 **[Try the Live Demo (demo.shirasal.eu)](https://demo.shirasal.eu)**
+
+*(Note: In this public demo, demo roles are enabled. You can choose the **Admin** role on the login screen to test the live moderator and channel settings).*
 
 ---
 
