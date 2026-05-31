@@ -1,6 +1,7 @@
 import knexLib from 'knex';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,10 +25,20 @@ export const init = async () => {
     };
     console.log(`Verbinde mit MariaDB-Datenbank: ${config.connection.database} auf ${config.connection.host}`);
   } else {
+    const dbPath = process.env.DB_FILE_PATH || path.join(__dirname, 'shirasal.sqlite');
+    const dbDir = path.dirname(dbPath);
+    if (!fs.existsSync(dbDir)) {
+      try {
+        fs.mkdirSync(dbDir, { recursive: true });
+        console.log(`Verzeichnis für SQLite-Datenbank erstellt: ${dbDir}`);
+      } catch (err) {
+        console.error(`Fehler beim Erstellen des SQLite-Verzeichnisses: ${err.message}`);
+      }
+    }
     config = {
       client: 'sqlite3',
       connection: {
-        filename: process.env.DB_FILE_PATH || path.join(__dirname, 'shirasal.sqlite')
+        filename: dbPath
       },
       useNullAsDefault: true
     };

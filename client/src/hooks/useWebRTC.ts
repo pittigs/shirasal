@@ -6,7 +6,7 @@ import rnnoiseWorkletPath from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.
 import rnnoiseWasmPath from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
 import rnnoiseSimdPath from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
 
-const SOCKET_URL = 'http://localhost:3001';
+const SOCKET_URL = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin;
 
 const rtcConfig: RTCConfiguration = {
   iceServers: [
@@ -55,6 +55,7 @@ export const useWebRTC = () => {
   const [avatar, setAvatar] = useState<string | null>(null);
   const [accountKey, setAccountKey] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [allowDemoRoles, setAllowDemoRoles] = useState(false);
 
   const [activationMode, setActivationMode] = useState<'vad' | 'ptt'>(() => {
     return (localStorage.getItem('voicechat-activation-mode') as 'vad' | 'ptt') || 'vad';
@@ -237,6 +238,10 @@ export const useWebRTC = () => {
       if (savedKey) {
         socket.emit('login-account', { accountKey: savedKey });
       }
+    });
+
+    socket.on('server-config', (config: { allowDemoRoles: boolean }) => {
+      setAllowDemoRoles(config.allowDemoRoles);
     });
 
     socket.on('channels-list', (list: Channel[]) => {
@@ -1108,6 +1113,7 @@ export const useWebRTC = () => {
     updateAvatar,
     accountKey,
     isLoggedIn,
+    allowDemoRoles,
     channels,
     textChannels,
     chatMessages,

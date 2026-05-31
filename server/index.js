@@ -152,6 +152,11 @@ const broadcastUsersState = async () => {
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
+  // Send server configuration to client
+  socket.emit('server-config', {
+    allowDemoRoles: process.env.ALLOW_DEMO_ROLES === 'true'
+  });
+
   // Initiale Listen senden bei Verbindungsaufbau
   socket.emit('channels-list', channels);
   socket.emit('text-channels-list', textChannels);

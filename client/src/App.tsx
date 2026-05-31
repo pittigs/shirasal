@@ -73,7 +73,8 @@ export const App: React.FC = () => {
     joinRoom,
     leaveRoom,
     joinTextChannel,
-    localAnalyser
+    localAnalyser,
+    allowDemoRoles
   } = useWebRTC();
 
   const [layout, setLayout] = useState({ chatVisible: true, chatPosition: 'right' as 'left' | 'right' });
@@ -414,42 +415,44 @@ export const App: React.FC = () => {
 
           {activeTab === 'register' ? (
             <form onSubmit={handleRegisterSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ textAlign: 'left' }}>
-                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px', fontWeight: 600 }}>
-                  {t('login.role_label')}
-                </label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {['guest', 'member', 'admin'].map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => setChosenRole(r)}
-                      style={{
-                        flex: 1,
-                        padding: '10px 6px',
-                        borderRadius: '8px',
-                        background: chosenRole === r ? 'var(--accent-color)' : 'rgba(255,255,255,0.04)',
-                        border: chosenRole === r ? 'none' : '1px solid rgba(255,255,255,0.1)',
-                        color: '#fff',
-                        cursor: 'pointer',
-                        fontSize: '0.85rem',
-                        fontWeight: 600,
-                        transition: 'all 0.2s',
-                        boxShadow: chosenRole === r ? '0 2px 10px rgba(var(--accent-rgb), 0.3)' : 'none'
-                      }}
-                    >
-                      {r === 'guest' ? '👤 ' + t('common.guest') : r === 'member' ? '🛡️ ' + t('common.member') : '👑 ' + t('common.admin')}
-                    </button>
-                  ))}
+              {allowDemoRoles && (
+                <div style={{ textAlign: 'left' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px', fontWeight: 600 }}>
+                    {t('login.role_label')}
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {['guest', 'member', 'admin'].map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setChosenRole(r)}
+                        style={{
+                          flex: 1,
+                          padding: '10px 6px',
+                          borderRadius: '8px',
+                          background: chosenRole === r ? 'var(--accent-color)' : 'rgba(255,255,255,0.04)',
+                          border: chosenRole === r ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                          color: '#fff',
+                          cursor: 'pointer',
+                          fontSize: '0.85rem',
+                          fontWeight: 600,
+                          transition: 'all 0.2s',
+                          boxShadow: chosenRole === r ? '0 2px 10px rgba(var(--accent-rgb), 0.3)' : 'none'
+                        }}
+                      >
+                        {r === 'guest' ? '👤 ' + t('common.guest') : r === 'member' ? '🛡️ ' + t('common.member') : '👑 ' + t('common.admin')}
+                      </button>
+                    ))}
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginTop: '6px' }}>
+                    {chosenRole === 'guest' && t('login.role_guest_desc')}
+                    {chosenRole === 'member' && t('login.role_member_desc')}
+                    {chosenRole === 'admin' && t('login.role_admin_desc')}
+                  </span>
                 </div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginTop: '6px' }}>
-                  {chosenRole === 'guest' && t('login.role_guest_desc')}
-                  {chosenRole === 'member' && t('login.role_member_desc')}
-                  {chosenRole === 'admin' && t('login.role_admin_desc')}
-                </span>
-              </div>
+              )}
 
-              <button type="submit" className="btn-primary" style={{ marginTop: '8px' }}>
+              <button type="submit" className="btn-primary" style={{ marginTop: allowDemoRoles ? '8px' : '0px' }}>
                 {t('login.register_btn')}
               </button>
             </form>
