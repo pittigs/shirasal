@@ -34,7 +34,12 @@ const translations = {
       key_placeholder: 'z.B. OX-8F2D-A91B-4E3F',
       server_url_label: 'Signalisierungsserver URL',
       server_url_placeholder: 'z.B. http://localhost:3001',
-      server_url_save: 'Verbindung speichern'
+      server_url_save: 'Verbindung speichern',
+      ldap_tab: 'Enterprise-Login (LDAP)',
+      ldap_user_label: 'Benutzername (AD/LDAP)',
+      ldap_user_placeholder: 'z.B. max.mustermann',
+      ldap_pass_label: 'Passwort',
+      ldap_pass_placeholder: 'Dein Domänen-Passwort'
     },
     register_success: {
       title: 'Account registriert!',
@@ -126,12 +131,26 @@ const translations = {
       chat_position: 'Chat-Position:',
       pos_left: 'Links',
       pos_right: 'Rechts',
-      language_label: 'Sprache / Language'
+      language_label: 'Sprache / Language',
+      font_label: 'Schriftart',
+      sound_volume_label: 'Effekt-Lautstärke'
     },
     roles: {
       admin: 'Admin',
       member: 'Mitglied',
       guest: 'Gast'
+    },
+    workspace: {
+      title: 'Workspace 📂',
+      doc_list_title: 'Dokumente',
+      new_doc_btn: 'Neues Dokument 📄',
+      new_doc_placeholder: 'Dokumentname...',
+      no_docs: 'Keine Dokumente vorhanden. Erstelle eins!',
+      delete_doc_confirm: 'Möchtest du dieses Dokument wirklich löschen?',
+      upload_btn: 'Datei hochladen 📤',
+      upload_success: 'Datei erfolgreich hochgeladen und eingebettet!',
+      unsupported_preview: 'Vorschau für diesen Dateityp nicht unterstützt. Klicke zum Herunterladen.',
+      unauthorized: 'Du hast keine Berechtigung, Dokumente zu löschen.'
     }
   },
   en: {
@@ -165,7 +184,12 @@ const translations = {
       key_placeholder: 'e.g. OX-8F2D-A91B-4E3F',
       server_url_label: 'Signaling Server URL',
       server_url_placeholder: 'e.g. http://localhost:3001',
-      server_url_save: 'Save Connection'
+      server_url_save: 'Save Connection',
+      ldap_tab: 'Enterprise Login (LDAP)',
+      ldap_user_label: 'Username (AD/LDAP)',
+      ldap_user_placeholder: 'e.g. john.doe',
+      ldap_pass_label: 'Password',
+      ldap_pass_placeholder: 'Your domain password'
     },
     register_success: {
       title: 'Account Registered!',
@@ -257,12 +281,26 @@ const translations = {
       chat_position: 'Chat Position:',
       pos_left: 'Left',
       pos_right: 'Right',
-      language_label: 'Language / Sprache'
+      language_label: 'Language / Sprache',
+      font_label: 'Font Family',
+      sound_volume_label: 'Sound Effects Volume'
     },
     roles: {
       admin: 'Admin',
       member: 'Member',
       guest: 'Guest'
+    },
+    workspace: {
+      title: 'Workspace 📂',
+      doc_list_title: 'Documents',
+      new_doc_btn: 'New Document 📄',
+      new_doc_placeholder: 'Document name...',
+      no_docs: 'No documents found. Create one!',
+      delete_doc_confirm: 'Are you sure you want to delete this document?',
+      upload_btn: 'Upload File 📤',
+      upload_success: 'File uploaded and embedded successfully!',
+      unsupported_preview: 'Preview not supported for this file type. Click to download.',
+      unauthorized: 'You do not have permission to delete documents.'
     }
   }
 } as const;

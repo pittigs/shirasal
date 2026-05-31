@@ -110,6 +110,29 @@ export const init = async () => {
     });
     console.log('Tabelle "private_message_reactions" erstellt.');
   }
+
+  // Create documents table
+  if (!(await knex.schema.hasTable('documents'))) {
+    await knex.schema.createTable('documents', (table) => {
+      table.string('id', 50).primary();
+      table.string('title', 255).notNullable();
+      table.binary('content').nullable();
+      table.timestamp('lastModified').defaultTo(knex.fn.now());
+    });
+    console.log('Tabelle "documents" erstellt.');
+  }
+
+  // Create document attachments table
+  if (!(await knex.schema.hasTable('document_attachments'))) {
+    await knex.schema.createTable('document_attachments', (table) => {
+      table.string('id', 50).primary();
+      table.string('docId', 50).notNullable();
+      table.string('filename', 255).notNullable();
+      table.text('filedata', 'longtext').notNullable();
+      table.timestamp('uploadedAt').defaultTo(knex.fn.now());
+    });
+    console.log('Tabelle "document_attachments" erstellt.');
+  }
 };
 
 export const saveUser = async (accountKey, username, role, avatar) => {
@@ -275,4 +298,44 @@ export const searchPrivateMessages = async (username, partnerUsername, query) =>
     timestamp: m.timestamp,
     reactions: reactionsMap[m.id] || {}
   }));
+};
+
+export const saveDocument = async (id, title, content) => {
+  const existing = await knex('documents').where({ id }).first();
+  const data = {
+    title,
+    lastModified: knex.fn.now()
+  };
+  if (content !== undefined) {
+    data.content = content;
+  }
+  if (existing) {
+    await knex('documents').where({ id }).update(data);
+  } else {
+    await knex('documents').insert({ id, ...data });
+  }
+};
+
+export const getDocument = async (id) => {
+  return knex('documents').where({ id }).first();
+};
+
+export const getAllDocuments = async () => {
+  return knex('documents').select('id', 'title', 'lastModified').orderBy('lastModified', 'desc');
+};
+
+export const deleteDocument = async (id) => {
+  await knex('documents').where({ id }).delete();
+};
+
+export const saveAttachment = async (id, docId, filename, filedata) => {
+  await knex('document_attachments').insert({ id, docId, filename, filedata });
+};
+
+export const getAttachments = async (docId) => {
+  return knex('document_attachments').where({ docId }).orderBy('uploadedAt', 'asc');
+};
+
+export const deleteAttachment = async (id) => {
+  await knex('document_attachments').where({ id }).delete();
 };

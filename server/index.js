@@ -7,9 +7,16 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as db from './db.js';
+import { authenticateLdap } from './ldap.js';
+import * as Y from 'yjs';
 
 const app = express();
 app.use(cors());
+
+// Yjs document memory caches
+const activeDocs = {}; // docId -> Y.Doc
+const docSaveTimeouts = {}; // docId -> Timeout
+
 
 app.get('/health', (req, res) => {
   res.send({ status: 'ok' });
@@ -283,6 +290,75 @@ io.on('connection', (socket) => {
     } catch (err) {
       console.error(err);
       socket.emit('login-error', 'Datenbankfehler beim Login.');
+    }
+  });
+
+  socket.on('login-ldap', async ({ username, password }) => {
+    try {
+      const ldapResult = await authenticateLdap(username, password);
+      
+      let mappedRole = 'guest';
+      
+      if (process.env.LDAP_ROLE_MAPPING) {
+        try {
+          const mapping = JSON.parse(process.env.LDAP_ROLE_MAPPING);
+          for (const [group, targetRole] of Object.entries(mapping)) {
+            const matched = ldapResult.groups.some(g => {
+              const cleanG = g.toLowerCase();
+              const cleanGroup = group.toLowerCase();
+              return cleanG === cleanGroup || cleanG.includes(`cn=${cleanGroup},`) || cleanG.startsWith(`cn=${cleanGroup}`) || cleanG.includes(cleanGroup);
+            });
+            if (matched) {
+              mappedRole = targetRole;
+              break;
+            }
+          }
+        } catch (jsonErr) {
+          console.error("Fehler beim Parsen von LDAP_ROLE_MAPPING:", jsonErr);
+        }
+      }
+      
+      const accountKey = 'LDAP-' + Buffer.from(username).toString('hex').toUpperCase();
+      
+      let user = await db.getUser(accountKey);
+      if (user) {
+        await db.saveUser(accountKey, username, mappedRole, user.avatar);
+        user.username = username;
+        user.role = mappedRole;
+      } else {
+        user = {
+          accountKey,
+          username,
+          role: mappedRole,
+          avatar: null
+        };
+        await db.saveUser(accountKey, username, mappedRole, null);
+      }
+      
+      console.log(`Erfolgreicher LDAP-Login: ${user.username} (${user.role})`);
+      
+      socket.data.username = user.username;
+      socket.data.role = user.role;
+      socket.data.accountKey = accountKey;
+      socket.data.avatar = user.avatar || null;
+
+      connectedUsers[socket.id] = {
+        socketId: socket.id,
+        username: user.username,
+        role: user.role,
+        avatar: user.avatar || null,
+        accountKey,
+        currentRoom: null,
+        currentTextRoom: 'general'
+      };
+
+      socket.emit('login-success', user);
+      await sendPrivateHistory(socket, user.username);
+      socket.join('text-general');
+      broadcastUsersState();
+    } catch (err) {
+      console.error("LDAP Login Fehler:", err.message);
+      socket.emit('login-error', `LDAP Login fehlgeschlagen: ${err.message}`);
     }
   });
 
@@ -774,6 +850,156 @@ io.on('connection', (socket) => {
     } catch (err) {
       console.error(err);
       socket.emit('error-msg', 'Fehler bei der Suche nach DMs.');
+    }
+  });
+
+  // --- COWORKING / DOCUMENT WORKSPACE EVENTS ---
+
+  socket.on('get-documents', async () => {
+    try {
+      const list = await db.getAllDocuments();
+      socket.emit('documents-list', list);
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Laden der Dokumentenliste.');
+    }
+  });
+
+  socket.on('create-document', async ({ title }) => {
+    const cleanTitle = title.trim() || 'Unbenanntes Dokument';
+    const docId = Math.random().toString(36).substr(2, 9);
+    try {
+      await db.saveDocument(docId, cleanTitle, null);
+      const list = await db.getAllDocuments();
+      io.emit('documents-list', list);
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Erstellen des Dokuments.');
+    }
+  });
+
+  socket.on('delete-document', async ({ docId }) => {
+    if (!hasPermission(socket, 'canManageChannels') && socket.data.role !== 'admin') {
+      socket.emit('error-msg', 'Keine Berechtigung, Dokumente zu löschen.');
+      return;
+    }
+    try {
+      await db.deleteDocument(docId);
+      delete activeDocs[docId];
+      if (docSaveTimeouts[docId]) {
+        clearTimeout(docSaveTimeouts[docId]);
+        delete docSaveTimeouts[docId];
+      }
+      const list = await db.getAllDocuments();
+      io.emit('documents-list', list);
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Löschen des Dokuments.');
+    }
+  });
+
+  socket.on('join-document', async ({ docId }) => {
+    try {
+      const prevDocId = socket.data.currentDocId;
+      if (prevDocId) {
+        socket.leave(`doc-${prevDocId}`);
+      }
+
+      socket.join(`doc-${docId}`);
+      socket.data.currentDocId = docId;
+
+      let ydoc = activeDocs[docId];
+      if (!ydoc) {
+        ydoc = new Y.Doc();
+        const dbDoc = await db.getDocument(docId);
+        if (dbDoc && dbDoc.content) {
+          Y.applyUpdate(ydoc, new Uint8Array(dbDoc.content));
+        }
+        activeDocs[docId] = ydoc;
+      }
+
+      const stateUpdate = Y.encodeStateAsUpdate(ydoc);
+      socket.emit('document-init', {
+        docId,
+        update: Buffer.from(stateUpdate)
+      });
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Öffnen des Dokuments.');
+    }
+  });
+
+  socket.on('leave-document', () => {
+    const docId = socket.data.currentDocId;
+    if (docId) {
+      socket.leave(`doc-${docId}`);
+      socket.data.currentDocId = null;
+    }
+  });
+
+  socket.on('yjs-update', ({ docId, update }) => {
+    const ydoc = activeDocs[docId];
+    if (ydoc && update) {
+      try {
+        Y.applyUpdate(ydoc, new Uint8Array(update));
+        socket.to(`doc-${docId}`).emit('yjs-update', { docId, update });
+
+        if (!docSaveTimeouts[docId]) {
+          docSaveTimeouts[docId] = setTimeout(async () => {
+            delete docSaveTimeouts[docId];
+            const currentDoc = activeDocs[docId];
+            if (currentDoc) {
+              try {
+                const dbDoc = await db.getDocument(docId);
+                const title = dbDoc ? dbDoc.title : 'Unbenanntes Dokument';
+                const binaryState = Y.encodeStateAsUpdate(currentDoc);
+                await db.saveDocument(docId, title, Buffer.from(binaryState));
+              } catch (saveErr) {
+                console.error(`Fehler beim automatischen Speichern von Dokument ${docId}:`, saveErr);
+              }
+            }
+          }, 2000);
+        }
+      } catch (err) {
+        console.error("Yjs update error:", err);
+      }
+    }
+  });
+
+  socket.on('get-attachments', async ({ docId }) => {
+    try {
+      const list = await db.getAttachments(docId);
+      socket.emit('attachments-list', { docId, list });
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Laden der Dateianhänge.');
+    }
+  });
+
+  socket.on('upload-attachment', async ({ docId, filename, filedata }) => {
+    const attachmentId = Math.random().toString(36).substr(2, 9);
+    try {
+      await db.saveAttachment(attachmentId, docId, filename, filedata);
+      const list = await db.getAttachments(docId);
+      io.to(`doc-${docId}`).emit('attachments-list', { docId, list });
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Hochladen der Datei.');
+    }
+  });
+
+  socket.on('delete-attachment', async ({ docId, attachmentId }) => {
+    if (!hasPermission(socket, 'canManageChannels') && socket.data.role !== 'admin') {
+      socket.emit('error-msg', 'Keine Berechtigung, Anhänge zu löschen.');
+      return;
+    }
+    try {
+      await db.deleteAttachment(attachmentId);
+      const list = await db.getAttachments(docId);
+      io.to(`doc-${docId}`).emit('attachments-list', { docId, list });
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Löschen der Datei.');
     }
   });
 

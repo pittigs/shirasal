@@ -10,6 +10,8 @@ interface ThemeSettings {
   borderRadius: number;
   chatVisible: boolean;
   chatPosition: 'left' | 'right';
+  fontFamily?: string;
+  soundVolume?: number;
 }
 
 interface ThemeCustomizerProps {
@@ -42,7 +44,9 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({ onChangeLayout
     glassBlur: 16,
     borderRadius: 16,
     chatVisible: true,
-    chatPosition: 'right'
+    chatPosition: 'right',
+    fontFamily: "'Outfit', sans-serif",
+    soundVolume: 50
   });
 
   const [customBgUrl, setCustomBgUrl] = useState('');
@@ -56,6 +60,7 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({ onChangeLayout
         // Fallbacks für neue Properties
         if (parsed.chatVisible === undefined) parsed.chatVisible = true;
         if (parsed.chatPosition === undefined) parsed.chatPosition = 'right';
+        if (parsed.soundVolume === undefined) parsed.soundVolume = 50;
         
         setSettings(parsed);
         applyTheme(parsed);
@@ -83,6 +88,9 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({ onChangeLayout
     root.style.setProperty('--accent-rgb', s.accentRgb);
     root.style.setProperty('--glass-blur', `${s.glassBlur}px`);
     root.style.setProperty('--border-radius', `${s.borderRadius}px`);
+    if (s.fontFamily) {
+      root.style.setProperty('--font-sans', s.fontFamily);
+    }
   };
 
   const updateSettings = (newFields: Partial<ThemeSettings>) => {
@@ -314,6 +322,22 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({ onChangeLayout
             />
           </div>
 
+          {/* 5.5 Sound Volume Slider */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+              <span style={{ fontWeight: 600 }}>{t('customizer.sound_volume_label')}</span>
+              <span>{settings.soundVolume !== undefined ? settings.soundVolume : 50}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={settings.soundVolume !== undefined ? settings.soundVolume : 50}
+              onChange={(e) => updateSetting('soundVolume', parseInt(e.target.value))}
+              style={{ width: '100%', accentColor: 'var(--accent-color)', cursor: 'pointer' }}
+            />
+          </div>
+
           <hr style={{ borderColor: 'rgba(255,255,255,0.06)' }} />
 
           {/* 6. Layout-Einstellungen */}
@@ -381,6 +405,31 @@ export const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({ onChangeLayout
               )}
 
             </div>
+          </div>
+
+          <hr style={{ borderColor: 'rgba(255,255,255,0.06)' }} />
+
+          {/* 6.5 Schriftartauswahl */}
+          <div>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '8px', fontWeight: 600 }}>{t('customizer.font_label')}</span>
+            <select
+              value={settings.fontFamily || "'Outfit', sans-serif"}
+              onChange={(e) => updateSetting('fontFamily', e.target.value)}
+              className="input-field"
+              style={{
+                padding: '6px 10px',
+                fontSize: '0.8rem',
+                width: '100%',
+                background: 'rgba(0,0,0,0.3)',
+                border: '1px solid rgba(255,255,255,0.1)'
+              }}
+            >
+              <option value="'Outfit', sans-serif">Outfit (Modern)</option>
+              <option value="'Inter', sans-serif">Inter (Sleek)</option>
+              <option value="'Roboto', sans-serif">Roboto (Clean)</option>
+              <option value="'Playfair Display', serif">Playfair Display (Elegant)</option>
+              <option value="'JetBrains Mono', monospace">JetBrains Mono (Developer)</option>
+            </select>
           </div>
 
           <hr style={{ borderColor: 'rgba(255,255,255,0.06)' }} />

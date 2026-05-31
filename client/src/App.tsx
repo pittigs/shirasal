@@ -7,6 +7,7 @@ import { ChannelList } from './components/ChannelList';
 import { ChatRoom } from './components/ChatRoom';
 import { AudioVisualizer } from './components/AudioVisualizer';
 import { AdminPanel } from './components/AdminPanel';
+import { Workspace } from './components/Workspace';
 import logo from './assets/logo.png';
 
 export const App: React.FC = () => {
@@ -38,6 +39,7 @@ export const App: React.FC = () => {
     noiseSuppressionMode,
     createAccount,
     loginWithKey,
+    loginWithLdap,
     logout,
     changeNickname, // Eigener Name ändern
     changeUserRole,
@@ -86,7 +88,8 @@ export const App: React.FC = () => {
     searchResults,
     clearSearchResults,
     serverUrl,
-    changeServerUrl
+    changeServerUrl,
+    socket
   } = useWebRTC();
 
   const [layout, setLayout] = useState({ chatVisible: true, chatPosition: 'right' as 'left' | 'right' });
@@ -122,10 +125,13 @@ export const App: React.FC = () => {
   }, []);
 
 
-  const [activeTab, setActiveTab] = useState<'register' | 'login'>('register');
+  const [activeTab, setActiveTab] = useState<'register' | 'login' | 'ldap'>('register');
   const [chosenRole, setChosenRole] = useState('guest'); // guest, member, admin
   const [inputKey, setInputKey] = useState('');
   const [serverUrlInput, setServerUrlInput] = useState(serverUrl);
+  const [ldapUsername, setLdapUsername] = useState('');
+  const [ldapPassword, setLdapPassword] = useState('');
+  const [mainView, setMainView] = useState<'chat' | 'workspace'>('chat');
   const [showKeyReveal, setShowKeyReveal] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
@@ -203,6 +209,13 @@ export const App: React.FC = () => {
     e.preventDefault();
     if (inputKey.trim()) {
       loginWithKey(inputKey.trim());
+    }
+  };
+
+  const handleLdapSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (ldapUsername.trim() && ldapPassword) {
+      loginWithLdap(ldapUsername.trim(), ldapPassword);
     }
   };
 
@@ -432,6 +445,23 @@ export const App: React.FC = () => {
             >
               {t('login.login_tab')}
             </button>
+            <button
+              onClick={() => setActiveTab('ldap')}
+              style={{
+                flex: 1,
+                padding: '8px',
+                borderRadius: '8px',
+                border: 'none',
+                background: activeTab === 'ldap' ? 'var(--accent-color)' : 'transparent',
+                color: '#fff',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                transition: 'all 0.2s'
+              }}
+            >
+              {t('login.ldap_tab')}
+            </button>
           </div>
 
           {activeTab === 'register' ? (
@@ -477,7 +507,7 @@ export const App: React.FC = () => {
                 {t('login.register_btn')}
               </button>
             </form>
-          ) : (
+          ) : activeTab === 'login' ? (
             <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ textAlign: 'left' }}>
                 <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px', fontWeight: 600 }}>
@@ -490,6 +520,40 @@ export const App: React.FC = () => {
                   onChange={(e) => setInputKey(e.target.value)}
                   className="input-field"
                   style={{ fontFamily: 'var(--font-mono)', letterSpacing: '1px', textTransform: 'uppercase' }}
+                  required
+                />
+              </div>
+
+              <button type="submit" className="btn-primary" style={{ marginTop: '8px' }}>
+                {t('login.login_btn')}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleLdapSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ textAlign: 'left' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px', fontWeight: 600 }}>
+                  {t('login.ldap_user_label')}
+                </label>
+                <input
+                  type="text"
+                  placeholder={t('login.ldap_user_placeholder')}
+                  value={ldapUsername}
+                  onChange={(e) => setLdapUsername(e.target.value)}
+                  className="input-field"
+                  required
+                />
+              </div>
+
+              <div style={{ textAlign: 'left' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px', fontWeight: 600 }}>
+                  {t('login.ldap_pass_label')}
+                </label>
+                <input
+                  type="password"
+                  placeholder={t('login.ldap_pass_placeholder')}
+                  value={ldapPassword}
+                  onChange={(e) => setLdapPassword(e.target.value)}
+                  className="input-field"
                   required
                 />
               </div>
@@ -625,39 +689,81 @@ export const App: React.FC = () => {
           height: '42px' // Feste Höhe passend zur Toolbar
         }}
       >
-        <div>
-          <h1
-            style={{
-              fontSize: '1.8rem',
-              fontWeight: 800,
-              background: 'linear-gradient(135deg, #fff 0%, var(--accent-color) 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              letterSpacing: '-0.5px'
-            }}
-          >
-            ShirAsal
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-            {t('login.subtitle')}
-          </p>
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+          <div>
+            <h1
+              style={{
+                fontSize: '1.8rem',
+                fontWeight: 800,
+                background: 'linear-gradient(135deg, #fff 0%, var(--accent-color) 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                letterSpacing: '-0.5px'
+              }}
+            >
+              ShirAsal
+            </h1>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+              {t('login.subtitle')}
+            </p>
+          </div>
 
+          {/* Main View Tabs */}
+          <div style={{ display: 'flex', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '4px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.06)', marginLeft: '40px' }}>
+            <button
+              onClick={() => setMainView('chat')}
+              className="glass-panel"
+              style={{
+                padding: '6px 16px',
+                borderRadius: '16px',
+                border: 'none',
+                background: mainView === 'chat' ? 'var(--accent-color)' : 'transparent',
+                color: '#fff',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                transition: 'all 0.2s',
+                boxShadow: mainView === 'chat' ? '0 2px 8px rgba(var(--accent-rgb), 0.3)' : 'none'
+              }}
+            >
+              💬 Chat & Voice
+            </button>
+            <button
+              onClick={() => setMainView('workspace')}
+              className="glass-panel"
+              style={{
+                padding: '6px 16px',
+                borderRadius: '16px',
+                border: 'none',
+                background: mainView === 'workspace' ? 'var(--accent-color)' : 'transparent',
+                color: '#fff',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                transition: 'all 0.2s',
+                boxShadow: mainView === 'workspace' ? '0 2px 8px rgba(var(--accent-rgb), 0.3)' : 'none'
+              }}
+            >
+              📂 Workspace (Docs)
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Main Grid */}
-      <div
-        style={{
-          flex: 1,
-          display: 'grid',
-          gridTemplateColumns: !layout.chatVisible 
-            ? '1fr' 
-            : (layout.chatPosition === 'left' ? '1fr minmax(300px, 350px)' : 'minmax(300px, 350px) 1fr'),
-          gap: '20px',
-          height: 'calc(100% - 70px)',
-          minHeight: 0
-        }}
-      >
+      {/* Main Content Area */}
+      {mainView === 'chat' ? (
+        <div
+          style={{
+            flex: 1,
+            display: 'grid',
+            gridTemplateColumns: !layout.chatVisible 
+              ? '1fr' 
+              : (layout.chatPosition === 'left' ? '1fr minmax(300px, 350px)' : 'minmax(300px, 350px) 1fr'),
+            gap: '20px',
+            height: 'calc(100% - 70px)',
+            minHeight: 0
+          }}
+        >
         {/* Linke Spalte (Kanäle, Profil, Audio-Visualizer) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minHeight: 0, order: layout.chatPosition === 'right' ? 1 : 2 }}>
           
@@ -1277,8 +1383,17 @@ export const App: React.FC = () => {
           </div>
         </div>
       )}
-
     </div>
+  ) : (
+    <div style={{ flex: 1, height: 'calc(100% - 70px)', minHeight: 0 }}>
+      <Workspace
+        socket={socket}
+        userRole={role}
+        hasPermission={hasPermission}
+      />
+    </div>
+  )}
+
   </div>
   );
 };

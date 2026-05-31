@@ -5,6 +5,7 @@ import { RnnoiseWorkletNode, loadRnnoise } from '@sapphi-red/web-noise-suppresso
 import rnnoiseWorkletPath from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
 import rnnoiseWasmPath from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
 import rnnoiseSimdPath from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
+import { playNotificationSound } from '../utils/audio';
 
 const getSocketUrl = (): string => {
   const saved = localStorage.getItem('shirasal-server-url');
@@ -439,6 +440,7 @@ export const useWebRTC = () => {
     // --- WebRTC Connectors ---
     socket.on('user-joined', async ({ socketId, username: peerName, role: peerRole }: Participant) => {
       console.log(`Neuer Peer beigetreten: ${peerName} (${socketId})`);
+      playNotificationSound('join');
       const pc = createPeerConnection(socketId, peerName, peerRole);
       
       const streamToSend = processedStreamRef.current || localStreamRef.current;
@@ -555,6 +557,7 @@ export const useWebRTC = () => {
 
     socket.on('user-left', ({ socketId }) => {
       closePeer(socketId);
+      playNotificationSound('leave');
     });
 
     return () => {
@@ -910,6 +913,12 @@ export const useWebRTC = () => {
     }
   };
 
+  const loginWithLdap = (user: string, pass: string) => {
+    if (socketRef.current && user.trim() && pass) {
+      socketRef.current.emit('login-ldap', { username: user.trim(), password: pass });
+    }
+  };
+
   const logout = () => {
     leaveRoom();
     localStorage.removeItem('voicechat-account-key');
@@ -1007,6 +1016,7 @@ export const useWebRTC = () => {
   const toggleMute = () => {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
+    playNotificationSound(nextMuted ? 'mute' : 'unmute');
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((track) => {
         track.enabled = !nextMuted;
@@ -1278,6 +1288,7 @@ export const useWebRTC = () => {
     localSpeaking,
     createAccount,
     loginWithKey,
+    loginWithLdap,
     logout,
     changeNickname,
     changeUserRole,
@@ -1325,6 +1336,7 @@ export const useWebRTC = () => {
     clearSearchResults,
     hasPermission,
     serverUrl,
-    changeServerUrl
+    changeServerUrl,
+    socket: socketRef.current
   };
 };
