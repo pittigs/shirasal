@@ -57,12 +57,19 @@
 ShirAsal can be deployed locally using helper scripts or via Docker.
 
 ### Option A: Using Docker Compose (Recommended)
-Make sure you have Docker and Docker Compose installed, then run:
+Make sure you have Docker and Docker Compose installed.
 
-```bash
-docker compose up --build -d
-```
-Access the client at `http://localhost:3001`.
+1. **Configure Environment:** Create a `.env` file in the root directory (you can copy `.env.example` as a starting point):
+   ```bash
+   cp .env.example .env
+   ```
+2. **Start Services:** Run the containers in the background:
+   ```bash
+   docker compose up --build -d
+   ```
+   By default, the `docker-compose.yml` is configured to set up two instances behind a reverse proxy (like Traefik):
+   * **Production (`voice.shirasal.eu`):** Demo roles are disabled (`ALLOW_DEMO_ROLES=false`).
+   * **Demo (`demo.shirasal.eu`):** Demo roles are enabled (`ALLOW_DEMO_ROLES=true`) so users can test all features.
 
 ### Option B: Local Running (Development)
 You can run the launcher scripts directly:
@@ -77,14 +84,18 @@ You can run the launcher scripts directly:
 
 ---
 
-## 💾 Database Configuration
-ShirAsal uses **Knex** to support dual database configurations in `server/.env`:
+## 💾 Configuration & Database
+ShirAsal can be configured using environment variables (in a root `.env` file for Docker, or `server/.env` for local runs):
 
+### General Options
+* `ALLOW_DEMO_ROLES`: Set to `true` to allow users to select Guest/Member/Admin roles on the login screen. If `false` (default), the first user to register becomes Admin, and subsequent users become Guests.
+
+### Database Settings
 1. **SQLite (Default):** Zero configuration, saves data to `server/shirasal.sqlite`.
    ```env
    DB_TYPE=sqlite
    ```
-2. **MariaDB / MySQL:** Production-ready relational storage.
+2. **MariaDB / MySQL:** Relational storage. Set the following in your `.env` file:
    ```env
    DB_TYPE=mariadb
    DB_HOST=127.0.0.1
