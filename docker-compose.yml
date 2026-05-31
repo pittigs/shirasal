@@ -1,25 +1,77 @@
 services:
-  shirasal:
+  # 1. Haupt-Produktionsinstanz (OHNE Demo-Rollen)
+  shirasal-prod:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: shirasal-server
-    ports:
-      - "3001:3001"
+    container_name: shirasal-prod
     environment:
       - NODE_ENV=production
       - DB_TYPE=sqlite
       - DB_FILE_PATH=/app/server/data/shirasal.sqlite
-      # Für MariaDB-Nutzung, einkommentieren und anpassen:
+      - ALLOW_DEMO_ROLES=false
+      # Für MariaDB-Nutzung (Werte werden sicher aus der .env geladen):
       # - DB_TYPE=mariadb
       # - DB_HOST=db-host-ip
       # - DB_PORT=3306
-      # - DB_USER=shirasal
-      # - DB_PASS=secret
-      # - DB_NAME=shirasal_db
+      # - DB_USER=${DB_USER}
+      # - DB_PASS=${DB_PASS}
+      # - DB_NAME=${DB_NAME}
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "traefik_proxy"
+      traefik.http.routers.shirasal-prod.rule: "Host(`voice.shirasal.eu`)"
+      traefik.http.routers.shirasal-prod.entrypoints: "websecure"
+      traefik.http.routers.shirasal-prod.tls: "true"
+      traefik.http.routers.shirasal-prod.tls.certresolver: "http-resolver"
+      traefik.http.services.shirasal-prod.loadbalancer.server.port: "3001"
+      traefik.http.services.shirasal-prod.loadbalancer.server.scheme: "http"
+    networks:
+      - default
+      - traefik_proxy
     volumes:
-      - shirasal-data:/app/server/data
+      - shirasal-prod-data:/app/server/data
+    restart: unless-stopped
+
+  # 2. Demo-Instanz (MIT Demo-Rollen für GitHub-Tester)
+  shirasal-demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shirasal-demo
+    environment:
+      - NODE_ENV=production
+      - DB_TYPE=sqlite
+      - DB_FILE_PATH=/app/server/data/shirasal.sqlite
+      - ALLOW_DEMO_ROLES=true
+      # Für MariaDB-Nutzung (Werte werden sicher aus der .env geladen):
+      # - DB_TYPE=mariadb
+      # - DB_HOST=db-host-ip
+      # - DB_PORT=3306
+      # - DB_USER=${DB_USER}
+      # - DB_PASS=${DB_PASS}
+      # - DB_NAME=${DB_NAME}
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "traefik_proxy"
+      traefik.http.routers.shirasal-demo.rule: "Host(`demo.shirasal.eu`)"
+      traefik.http.routers.shirasal-demo.entrypoints: "websecure"
+      traefik.http.routers.shirasal-demo.tls: "true"
+      traefik.http.routers.shirasal-demo.tls.certresolver: "http-resolver"
+      traefik.http.services.shirasal-demo.loadbalancer.server.port: "3001"
+      traefik.http.services.shirasal-demo.loadbalancer.server.scheme: "http"
+    networks:
+      - default
+      - traefik_proxy
+    volumes:
+      - shirasal-demo-data:/app/server/data
     restart: unless-stopped
 
 volumes:
-  shirasal-data:
+  shirasal-prod-data:
+  shirasal-demo-data:
+
+networks:
+  default:
+  traefik_proxy:
+    external: true
