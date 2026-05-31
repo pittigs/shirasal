@@ -1,13 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from '../contexts/LanguageContext';
 
-
 interface ChatMessage {
   id: string;
   username: string;
   role: string;
   text: string;
   timestamp: string;
+  reactions?: { [emoji: string]: string[] };
+}
+
+interface RoleInfo {
+  name: string;
+  color: string;
+  canManageRoles: boolean;
+  canManageChannels: boolean;
+  canManageUsers: boolean;
 }
 
 interface ChatRoomProps {
@@ -17,27 +25,43 @@ interface ChatRoomProps {
   title?: string;
   placeholder?: string;
   allUsers?: Array<{ username: string; role: string; online: boolean; socketId: string | null; avatar?: string | null }>;
+  roles: RoleInfo[];
+  activeChannelId?: string;
+  activePrivatePartner?: string;
+  toggleReaction?: (channelId: string, messageId: string, emoji: string) => void;
+  togglePrivateReaction?: (messageId: string, emoji: string, partnerUsername: string) => void;
+  searchPrivateMessages?: (partnerUsername: string, query: string) => void;
+  searchResults?: ChatMessage[];
+  clearSearchResults?: () => void;
 }
 
-const getRoleBadgeColor = (role: string) => {
-  switch (role) {
-    case 'admin': return '#ef4444'; // Rot
-    case 'member': return '#8b5cf6'; // Violett
-    default: return '#94a3b8'; // Grau
-  }
-};
+const QUICK_EMOJIS = ['👍', '❤️', '🔥', '😂', '😮', '😢'];
 
-const getRoleIcon = (role: string) => {
-  switch (role) {
-    case 'admin': return '👑';
-    case 'member': return '🛡️';
-    default: return '👤';
-  }
-};
-
-export const ChatRoom: React.FC<ChatRoomProps> = ({ messages, onSendMessage, currentUser, title, placeholder, allUsers = [] }) => {
+export const ChatRoom: React.FC<ChatRoomProps> = ({
+  messages,
+  onSendMessage,
+  currentUser,
+  title,
+  placeholder,
+  allUsers = [],
+  roles = [],
+  activeChannelId = 'general',
+  activePrivatePartner,
+  toggleReaction,
+  togglePrivateReaction,
+  searchPrivateMessages,
+  searchResults = [],
+  clearSearchResults
+}) => {
   const { t } = useTranslation();
   const [text, setText] = useState('');
+  
+  // Search States
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Hover Message State for Reactions Menu
+  const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -95,7 +119,6 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ messages, onSendMessage, cur
       alert(t('chat.image_send_error'));
     }
 
-
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -110,12 +133,45 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ messages, onSendMessage, cur
     scrollToBottom();
   }, [messages]);
 
+  // Debounced search for DMs (database search)
+  useEffect(() => {
+    if (activePrivatePartner && showSearch && searchQuery.trim()) {
+      const delayDebounce = setTimeout(() => {
+        searchPrivateMessages?.(activePrivatePartner, searchQuery);
+      }, 300);
+      return () => clearTimeout(delayDebounce);
+    } else {
+      clearSearchResults?.();
+    }
+  }, [searchQuery, activePrivatePartner, showSearch]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim()) return;
     onSendMessage(text.trim());
     setText('');
   };
+
+  const getUsernameColor = (msgUsername: string, msgRole: string) => {
+    if (msgUsername === 'System') return '#94a3b8';
+    const userObj = allUsers.find(u => u.username === msgUsername);
+    const actualRole = userObj ? userObj.role : msgRole;
+    const roleObj = roles.find(r => r.name === actualRole);
+    return roleObj ? roleObj.color : '#ffffff';
+  };
+
+  const getRoleLabel = (msgUsername: string, msgRole: string) => {
+    const userObj = allUsers.find(u => u.username === msgUsername);
+    const actualRole = userObj ? userObj.role : msgRole;
+    return actualRole.toUpperCase();
+  };
+
+  // Filter messages for group channels, or show searchResults for DM search
+  const displayedMessages = activePrivatePartner && searchQuery.trim() && showSearch
+    ? searchResults
+    : (searchQuery.trim() && !activePrivatePartner && showSearch
+        ? messages.filter(m => m.text.toLowerCase().includes(searchQuery.toLowerCase()))
+        : messages);
 
   return (
     <div
@@ -137,13 +193,94 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ messages, onSendMessage, cur
           borderBottom: '1px solid rgba(255,255,255,0.06)',
           display: 'flex',
           alignItems: 'center',
+          justifyContent: 'space-between',
           gap: '8px'
         }}
       >
-        <span style={{ fontSize: '1.1rem' }}>💬</span>
-        <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>{title || t('chat.default_title')}</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '1.1rem' }}>💬</span>
+          <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>{title || t('chat.default_title')}</h3>
+        </div>
+
+        {/* Search Icon & Bar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {showSearch && (
+            <input
+              type="text"
+              placeholder={activePrivatePartner ? "DM durchsuchen..." : "Kanal filtern..."}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input-field"
+              style={{
+                padding: '4px 8px',
+                fontSize: '0.8rem',
+                width: '150px',
+                background: 'rgba(0,0,0,0.2)',
+                border: '1px solid rgba(255,255,255,0.1)'
+              }}
+              autoFocus
+            />
+          )}
+          <button
+            onClick={() => {
+              if (showSearch) {
+                setSearchQuery('');
+                clearSearchResults?.();
+              }
+              setShowSearch(!showSearch);
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: showSearch ? 'var(--accent-color)' : '#fff',
+              fontSize: '1rem',
+              padding: '4px'
+            }}
+            title="Chat durchsuchen"
+          >
+            🔍
+          </button>
+        </div>
       </div>
 
+      {/* Suchergebnisse Hinweis */}
+      {showSearch && searchQuery.trim() && (
+        <div
+          style={{
+            padding: '8px 16px',
+            background: 'rgba(var(--accent-rgb), 0.1)',
+            borderBottom: '1px solid rgba(var(--accent-rgb), 0.2)',
+            fontSize: '0.8rem',
+            color: 'var(--text-secondary)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}
+        >
+          <span>
+            {activePrivatePartner 
+              ? `DM-Suchergebnisse für "${searchQuery}" (${displayedMessages.length} Treffer)`
+              : `Kanal gefiltert nach "${searchQuery}" (${displayedMessages.length} Treffer)`}
+          </span>
+          <button
+            onClick={() => {
+              setSearchQuery('');
+              clearSearchResults?.();
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--accent-color)',
+              cursor: 'pointer',
+              fontSize: '0.75rem',
+              fontWeight: 700
+            }}
+          >
+            Filter zurücksetzen
+          </button>
+        </div>
+      )}
 
       {/* Nachrichtenverlauf */}
       <div
@@ -156,7 +293,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ messages, onSendMessage, cur
           gap: '12px'
         }}
       >
-        {messages.map((msg, index) => {
+        {displayedMessages.map((msg, index) => {
           const isMe = msg.username === currentUser;
           const isSystem = msg.username === 'System';
 
@@ -182,7 +319,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ messages, onSendMessage, cur
           }
 
           // Prüfen, ob wir diese Nachricht mit der vorherigen gruppieren können
-          const prevMsg = index > 0 ? messages[index - 1] : null;
+          const prevMsg = index > 0 ? displayedMessages[index - 1] : null;
           let shouldGroup = false;
 
           if (prevMsg && prevMsg.username !== 'System' && prevMsg.username === msg.username) {
@@ -199,15 +336,61 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ messages, onSendMessage, cur
           return (
             <div
               key={msg.id}
+              onMouseEnter={() => setHoveredMessageId(msg.id)}
+              onMouseLeave={() => setHoveredMessageId(null)}
               style={{
                 display: 'flex',
                 gap: '8px',
                 alignSelf: isMe ? 'flex-end' : 'flex-start',
                 maxWidth: '85%',
                 marginTop: shouldGroup ? '-4px' : '8px',
-                flexDirection: isMe ? 'row-reverse' : 'row'
+                flexDirection: isMe ? 'row-reverse' : 'row',
+                position: 'relative' // needed for hovered quick reaction panel position absolute
               }}
             >
+              {/* Quick Reactions hover bar */}
+              {hoveredMessageId === msg.id && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '-20px',
+                    [isMe ? 'left' : 'right']: '10px',
+                    background: '#181824',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    borderRadius: '20px',
+                    padding: '2px 8px',
+                    display: 'flex',
+                    gap: '8px',
+                    zIndex: 10,
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+                    backdropFilter: 'blur(10px)'
+                  }}
+                >
+                  {QUICK_EMOJIS.map((emoji) => (
+                    <span
+                      key={emoji}
+                      onClick={() => {
+                        if (activePrivatePartner) {
+                          togglePrivateReaction?.(msg.id, emoji, activePrivatePartner);
+                        } else {
+                          toggleReaction?.(activeChannelId, msg.id, emoji);
+                        }
+                      }}
+                      style={{
+                        cursor: 'pointer',
+                        fontSize: '1rem',
+                        padding: '2px',
+                        transition: 'transform 0.1s',
+                        display: 'inline-block'
+                      }}
+                      className="hover-scale"
+                    >
+                      {emoji}
+                    </span>
+                  ))}
+                </div>
+              )}
+
               {/* Avatar Spalte */}
               {!shouldGroup ? (
                 (() => {
@@ -273,14 +456,17 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ messages, onSendMessage, cur
                   >
                     <span
                       style={{
-                        color: getRoleBadgeColor(msg.role),
+                        color: getUsernameColor(msg.username, msg.role),
                         fontWeight: 700,
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '2px'
+                        gap: '4px'
                       }}
                     >
-                      {getRoleIcon(msg.role)} {msg.username}
+                      <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.08)', padding: '1px 4px', borderRadius: '4px', opacity: 0.8, color: '#fff' }}>
+                        {getRoleLabel(msg.username, msg.role)}
+                      </span>
+                      {msg.username}
                     </span>
                     <span style={{ color: 'var(--text-muted)' }}>{msg.timestamp}</span>
                   </div>
@@ -323,6 +509,46 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ messages, onSendMessage, cur
                     msg.text
                   )}
                 </div>
+
+                {/* EMOJI REACTION BADGES */}
+                {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px', alignSelf: isMe ? 'flex-end' : 'flex-start' }}>
+                    {Object.entries(msg.reactions).map(([emoji, users]) => {
+                      const reactedByMe = users.includes(currentUser);
+                      return (
+                        <button
+                          key={emoji}
+                          onClick={() => {
+                            if (activePrivatePartner) {
+                              togglePrivateReaction?.(msg.id, emoji, activePrivatePartner);
+                            } else {
+                              toggleReaction?.(activeChannelId, msg.id, emoji);
+                            }
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '2px 6px',
+                            borderRadius: '6px',
+                            background: reactedByMe ? 'rgba(var(--accent-rgb), 0.18)' : 'rgba(255, 255, 255, 0.05)',
+                            border: reactedByMe ? '1px solid var(--accent-color)' : '1px solid rgba(255, 255, 255, 0.1)',
+                            color: '#fff',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                            transition: 'all 0.15s'
+                          }}
+                          title={users.join(', ')}
+                        >
+                          <span>{emoji}</span>
+                          <span>{users.length}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
               </div>
             </div>
           );
@@ -388,5 +614,6 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ messages, onSendMessage, cur
       </form>
     </div>
   );
-
 };
+
+export default ChatRoom;

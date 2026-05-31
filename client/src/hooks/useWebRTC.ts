@@ -6,7 +6,17 @@ import rnnoiseWorkletPath from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.
 import rnnoiseWasmPath from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
 import rnnoiseSimdPath from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
 
-const SOCKET_URL = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin;
+const getSocketUrl = (): string => {
+  const saved = localStorage.getItem('shirasal-server-url');
+  if (saved) return saved;
+  const origin = window.location.origin;
+  if (origin.startsWith('wails://') || origin.startsWith('file://')) {
+    return 'http://localhost:3001';
+  }
+  return import.meta.env.DEV ? 'http://localhost:3001' : origin;
+};
+
+const SOCKET_URL = getSocketUrl();
 
 const rtcConfig: RTCConfiguration = {
   iceServers: [
@@ -35,6 +45,15 @@ interface ChatMessage {
   role: string;
   text: string;
   timestamp: string;
+  reactions?: { [emoji: string]: string[] };
+}
+
+interface RoleInfo {
+  name: string;
+  color: string;
+  canManageRoles: boolean;
+  canManageChannels: boolean;
+  canManageUsers: boolean;
 }
 
 interface Channel {
@@ -54,6 +73,7 @@ export const useWebRTC = () => {
   const [role, setRole] = useState('guest');
   const [avatar, setAvatar] = useState<string | null>(null);
   const [accountKey, setAccountKey] = useState<string | null>(null);
+  const serverUrl = SOCKET_URL;
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [allowDemoRoles, setAllowDemoRoles] = useState(false);
 
@@ -83,6 +103,8 @@ export const useWebRTC = () => {
   const [textChannels, setTextChannels] = useState<Channel[]>([]);
   const [joinedRoomId, setJoinedRoomId] = useState<string | null>(null);
   const [currentTextRoomId, setCurrentTextRoomId] = useState<string>('general');
+  const [roles, setRoles] = useState<RoleInfo[]>([]);
+  const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
 
   // Chatnachrichten für den aktiven Kanal
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -209,6 +231,8 @@ export const useWebRTC = () => {
   const socketRef = useRef<Socket | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const processedStreamRef = useRef<MediaStream | null>(null);
+  const destinationNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const screenAudioSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const localGainNodeRef = useRef<GainNode | null>(null);
   const peerConnectionsRef = useRef<{ [socketId: string]: RTCPeerConnection }>({});
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -283,14 +307,15 @@ export const useWebRTC = () => {
           username: msg.senderUsername,
           role: msg.senderRole || 'guest',
           text: msg.text,
-          timestamp: msg.timestamp
+          timestamp: msg.timestamp,
+          reactions: msg.reactions || {}
         });
       });
       setPrivateChats(chats);
     });
 
     socket.on('private-message', (payload: any) => {
-      const { senderUsername, receiverUsername, senderRole, text, timestamp, id } = payload;
+      const { senderUsername, receiverUsername, senderRole, text, timestamp, id, reactions } = payload;
       const currentUsername = usernameRef.current;
       const partner = senderUsername === currentUsername ? receiverUsername : senderUsername;
       
@@ -299,7 +324,8 @@ export const useWebRTC = () => {
         username: senderUsername,
         role: senderRole || 'guest',
         text,
-        timestamp
+        timestamp,
+        reactions: reactions || {}
       };
 
       setPrivateChats((prev) => {
@@ -371,6 +397,43 @@ export const useWebRTC = () => {
     socket.on('login-error', (msg: string) => {
       alert(`Login fehlgeschlagen: ${msg}`);
       localStorage.removeItem('voicechat-account-key');
+    });
+
+    // --- Roles and Reactions Listeners ---
+    socket.on('roles-list', (list: RoleInfo[]) => {
+      setRoles(list);
+    });
+
+    socket.on('message-reactions-updated', ({ messageId, reactions }) => {
+      setChatMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId ? { ...msg, reactions } : msg
+        )
+      );
+    });
+
+    socket.on('private-message-reactions-updated', ({ messageId, reactions }) => {
+      setPrivateChats((prev) => {
+        const updated = { ...prev };
+        for (const partner in updated) {
+          updated[partner] = updated[partner].map((msg) =>
+            msg.id === messageId ? { ...msg, reactions } : msg
+          );
+        }
+        return updated;
+      });
+    });
+
+    socket.on('search-private-results', ({ results }) => {
+      const mapped = results.map((msg: any) => ({
+        id: msg.id,
+        username: msg.senderUsername,
+        role: msg.senderRole || 'guest',
+        text: msg.text,
+        timestamp: msg.timestamp,
+        reactions: msg.reactions || {}
+      }));
+      setSearchResults(mapped);
     });
 
     // --- WebRTC Connectors ---
@@ -569,6 +632,7 @@ export const useWebRTC = () => {
       const gainNode = audioCtx.createGain();
       localGainNodeRef.current = gainNode;
       const destinationNode = audioCtx.createMediaStreamDestination();
+      destinationNodeRef.current = destinationNode;
       
       // Verbindungen aufbauen
       source.connect(analyser); // Analysiert den rohen Mikrofonton
@@ -1013,7 +1077,7 @@ export const useWebRTC = () => {
   const startScreenShare = async () => {
     if (!joinedRoomId) return;
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       localScreenStreamRef.current = stream;
       setLocalScreenStream(stream);
 
@@ -1023,6 +1087,20 @@ export const useWebRTC = () => {
       videoTrack.onended = () => {
         stopScreenShare();
       };
+
+      // Screen Audio-Mixer Bypass: Screen-Audiospur direkt an Destination anschließen
+      const audioTracks = stream.getAudioTracks();
+      if (audioTracks.length > 0) {
+        const audioCtx = audioContextRef.current;
+        const destNode = destinationNodeRef.current;
+        if (audioCtx && destNode) {
+          const screenAudioStream = new MediaStream([audioTracks[0]]);
+          const screenAudioSource = audioCtx.createMediaStreamSource(screenAudioStream);
+          screenAudioSource.connect(destNode);
+          screenAudioSourceNodeRef.current = screenAudioSource;
+          console.log("Screen Share Audio erfolgreich an Web-Audio Destination angeschlossen (Bypass).");
+        }
+      }
 
       for (const socketId in peerConnectionsRef.current) {
         const pc = peerConnectionsRef.current[socketId];
@@ -1036,6 +1114,15 @@ export const useWebRTC = () => {
   };
 
   const stopScreenShare = async () => {
+    if (screenAudioSourceNodeRef.current) {
+      try {
+        screenAudioSourceNodeRef.current.disconnect();
+      } catch (e) {
+        console.warn('Fehler beim Trennen der Screen-Audiospur:', e);
+      }
+      screenAudioSourceNodeRef.current = null;
+    }
+
     for (const socketId in peerConnectionsRef.current) {
       const pc = peerConnectionsRef.current[socketId];
       const sender = screenSendersRef.current[socketId];
@@ -1106,6 +1193,62 @@ export const useWebRTC = () => {
     setLocalCameraStream(null);
   };
 
+  const toggleReaction = (channelId: string, messageId: string, emoji: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit('toggle-reaction', { channelId, messageId, emoji });
+    }
+  };
+
+  const togglePrivateReaction = (messageId: string, emoji: string, partnerUsername: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit('toggle-private-reaction', { messageId, emoji, partnerUsername });
+    }
+  };
+
+  const createRole = (name: string, color: string, canManageRoles: boolean, canManageChannels: boolean, canManageUsers: boolean) => {
+    if (socketRef.current) {
+      socketRef.current.emit('create-role', { name, color, canManageRoles, canManageChannels, canManageUsers });
+    }
+  };
+
+  const updateRole = (name: string, color: string, canManageRoles: boolean, canManageChannels: boolean, canManageUsers: boolean) => {
+    if (socketRef.current) {
+      socketRef.current.emit('update-role', { name, color, canManageRoles, canManageChannels, canManageUsers });
+    }
+  };
+
+  const deleteRole = (name: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit('delete-role', { name });
+    }
+  };
+
+  const searchPrivateMessages = (partnerUsername: string, query: string) => {
+    if (socketRef.current && partnerUsername && query.trim()) {
+      socketRef.current.emit('search-private-messages', { partnerUsername, query: query.trim() });
+    }
+  };
+
+  const clearSearchResults = () => {
+    setSearchResults([]);
+  };
+
+  const changeServerUrl = (url: string) => {
+    const clean = url.trim();
+    if (clean) {
+      localStorage.setItem('shirasal-server-url', clean);
+    } else {
+      localStorage.removeItem('shirasal-server-url');
+    }
+    window.location.reload();
+  };
+
+  const hasPermission = (permission: 'canManageRoles' | 'canManageChannels' | 'canManageUsers') => {
+    if (role === 'admin') return true;
+    const rInfo = roles.find(r => r.name === role);
+    return rInfo ? !!rInfo[permission] : false;
+  };
+
   return {
     username,
     role,
@@ -1170,6 +1313,18 @@ export const useWebRTC = () => {
     joinRoom,
     leaveRoom,
     joinTextChannel,
-    localAnalyser: localAnalyserRef.current
+    localAnalyser: localAnalyserRef.current,
+    roles,
+    searchResults,
+    toggleReaction,
+    togglePrivateReaction,
+    createRole,
+    updateRole,
+    deleteRole,
+    searchPrivateMessages,
+    clearSearchResults,
+    hasPermission,
+    serverUrl,
+    changeServerUrl
   };
 };

@@ -74,13 +74,33 @@ export const App: React.FC = () => {
     leaveRoom,
     joinTextChannel,
     localAnalyser,
-    allowDemoRoles
+    allowDemoRoles,
+    roles,
+    createRole,
+    updateRole,
+    deleteRole,
+    hasPermission,
+    toggleReaction,
+    togglePrivateReaction,
+    searchPrivateMessages,
+    searchResults,
+    clearSearchResults,
+    serverUrl,
+    changeServerUrl
   } = useWebRTC();
 
   const [layout, setLayout] = useState({ chatVisible: true, chatPosition: 'right' as 'left' | 'right' });
 
   const handleLayoutChange = (visible: boolean, position: 'left' | 'right') => {
     setLayout({ chatVisible: visible, chatPosition: position });
+  };
+
+  const getUsernameColor = (name: string, fallbackRole: string) => {
+    if (name === 'System') return '#94a3b8';
+    const userObj = allUsers.find(u => u.username === name);
+    const actualRole = userObj ? userObj.role : fallbackRole;
+    const roleObj = roles.find(r => r.name === actualRole);
+    return roleObj ? roleObj.color : '#ffffff';
   };
 
   // Load and apply custom theme settings on startup (forces consistent styling on login screen)
@@ -105,6 +125,7 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'register' | 'login'>('register');
   const [chosenRole, setChosenRole] = useState('guest'); // guest, member, admin
   const [inputKey, setInputKey] = useState('');
+  const [serverUrlInput, setServerUrlInput] = useState(serverUrl);
   const [showKeyReveal, setShowKeyReveal] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
@@ -479,6 +500,32 @@ export const App: React.FC = () => {
             </form>
           )}
 
+          <hr style={{ borderColor: 'rgba(255,255,255,0.06)', margin: '12px 0 4px 0' }} />
+          
+          <div style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>
+              🌐 {t('login.server_url_label')}
+            </label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="text"
+                placeholder={t('login.server_url_placeholder')}
+                value={serverUrlInput}
+                onChange={(e) => setServerUrlInput(e.target.value)}
+                className="input-field"
+                style={{ flex: 1, padding: '8px 12px', fontSize: '0.85rem' }}
+              />
+              <button 
+                type="button" 
+                onClick={() => changeServerUrl(serverUrlInput)}
+                className="btn-primary"
+                style={{ padding: '8px 16px', fontSize: '0.85rem', width: 'auto' }}
+              >
+                {t('login.server_url_save')}
+              </button>
+            </div>
+          </div>
+
         </div>
       </div>
     );
@@ -509,7 +556,7 @@ export const App: React.FC = () => {
           alignItems: 'center'
         }}
       >
-        {role === 'admin' && (
+        {(role === 'admin' || hasPermission('canManageRoles') || hasPermission('canManageChannels') || hasPermission('canManageUsers')) && (
           <button
             onClick={() => setIsAdminOpen(true)}
             className="glass-panel"
@@ -547,6 +594,10 @@ export const App: React.FC = () => {
         onChangeUserRole={changeUserRole}
         onChangeUserNickname={changeUserNickname} // Neu!
         onChangeChannelPermission={changeChannelPermission}
+        roles={roles}
+        onCreateRole={createRole}
+        onUpdateRole={updateRole}
+        onDeleteRole={deleteRole}
       />
 
       {/* Unsichtbare Audio-Empfänger für WebRTC-Sprachausgabe */}
@@ -696,7 +747,7 @@ export const App: React.FC = () => {
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontSize: '0.9rem' }}>{role === 'admin' ? '👑' : role === 'member' ? '🛡️' : '👤'}</span>
-                      <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff' }}>{username}</h4>
+                      <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: getUsernameColor(username, role) }}>{username}</h4>
                       <button
                         onClick={() => {
                           setNewNameInput(username);
@@ -1054,6 +1105,7 @@ export const App: React.FC = () => {
                   }));
                 }
               }}
+              roles={roles}
             />
           </div>
         </div>
@@ -1156,6 +1208,14 @@ export const App: React.FC = () => {
               title={activePrivatePartner ? `PN mit @${activePrivatePartner}` : undefined}
               placeholder={activePrivatePartner ? `Nachricht an @${activePrivatePartner}...` : undefined}
               allUsers={allUsers}
+              roles={roles}
+              activeChannelId={currentTextRoomId}
+              activePrivatePartner={activePrivatePartner || undefined}
+              toggleReaction={toggleReaction}
+              togglePrivateReaction={togglePrivateReaction}
+              searchPrivateMessages={searchPrivateMessages}
+              searchResults={searchResults}
+              clearSearchResults={clearSearchResults}
             />
           </div>
 
@@ -1206,9 +1266,9 @@ export const App: React.FC = () => {
                     title={isSelf ? undefined : `PN an @${u.username} senden`}
                   >
                     <span style={{ color: '#22c55e' }}>🟢</span>
-                    <strong>{u.username}</strong>
-                    <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>
-                      ({u.role === 'admin' ? '👑 ' + t('roles.admin') : u.role === 'member' ? '🛡️ ' + t('roles.member') : '👤 ' + t('roles.guest')})
+                    <strong style={{ color: getUsernameColor(u.username, u.role) }}>{u.username}</strong>
+                    <span style={{ fontSize: '0.7rem', opacity: 0.7, color: getUsernameColor(u.username, u.role) }}>
+                      ({u.role.toUpperCase()})
                     </span>
                   </span>
                 );

@@ -31,7 +31,10 @@ const translations = {
       register_btn: 'Zufälligen Account generieren 🎲',
       key_label: 'Gib deinen Account-Key ein',
       login_btn: 'Einloggen 🔑',
-      key_placeholder: 'z.B. OX-8F2D-A91B-4E3F'
+      key_placeholder: 'z.B. OX-8F2D-A91B-4E3F',
+      server_url_label: 'Signalisierungsserver URL',
+      server_url_placeholder: 'z.B. http://localhost:3001',
+      server_url_save: 'Verbindung speichern'
     },
     register_success: {
       title: 'Account registriert!',
@@ -95,6 +98,7 @@ const translations = {
       title: 'Server-Rechteverwaltung',
       tab_users: '👥 Benutzer online ({count})',
       tab_channels: '📂 Kanallizenzen & Sichtbarkeit',
+      tab_roles: '🛡️ Rollen-Verwaltung',
       desc_users: 'Befördere Benutzer live oder benenne sie bei Verstößen direkt um.',
       no_other_online: 'Keine weiteren Benutzer online.',
       placeholder_new_name: 'Neuer Name',
@@ -158,7 +162,10 @@ const translations = {
       register_btn: 'Generate random account 🎲',
       key_label: 'Enter your Account Key',
       login_btn: 'Log In 🔑',
-      key_placeholder: 'e.g. OX-8F2D-A91B-4E3F'
+      key_placeholder: 'e.g. OX-8F2D-A91B-4E3F',
+      server_url_label: 'Signaling Server URL',
+      server_url_placeholder: 'e.g. http://localhost:3001',
+      server_url_save: 'Save Connection'
     },
     register_success: {
       title: 'Account Registered!',
@@ -222,6 +229,7 @@ const translations = {
       title: 'Server Permissions Management',
       tab_users: '👥 Users Online ({count})',
       tab_channels: '📂 Channel Licenses & Visibility',
+      tab_roles: '🛡️ Roles Management',
       desc_users: 'Promote users live or rename them directly in case of violations.',
       no_other_online: 'No other users online.',
       placeholder_new_name: 'New Name',

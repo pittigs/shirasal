@@ -27,3 +27,7 @@ logs/
 Thumbs.db
 .vscode/
 .idea/
+
+# Wails build output
+/build/
+

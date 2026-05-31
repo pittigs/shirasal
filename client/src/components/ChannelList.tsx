@@ -14,11 +14,19 @@ interface Participant {
   isSpeaking?: boolean;
 }
 
+interface RoleInfo {
+  name: string;
+  color: string;
+  canManageRoles: boolean;
+  canManageChannels: boolean;
+  canManageUsers: boolean;
+}
+
 interface ChannelListProps {
   channels: Channel[]; // Sprachkanäle
-  textChannels: Channel[]; // Textkanäle (Neu!)
+  textChannels: Channel[]; // Textkanäle
   joinedRoomId: string | null; // Aktiver Sprachkanal
-  currentTextRoomId: string; // Aktiver Textkanal (Neu!)
+  currentTextRoomId: string; // Aktiver Textkanal
   userRole: string;
   localUsername: string;
   localSpeaking: boolean;
@@ -26,20 +34,15 @@ interface ChannelListProps {
   remoteParticipants: Participant[];
   onJoinRoom: (roomId: string) => void;
   onLeaveRoom: () => void;
-  onJoinTextRoom: (roomId: string) => void; // (Neu!)
+  onJoinTextRoom: (roomId: string) => void;
   onCreateChannel: (name: string, minRole: string) => void;
-  onCreateTextChannel: (name: string, minRole: string) => void; // (Neu!)
-  allUsers: Array<{ username: string; role: string; online: boolean; socketId: string | null; avatar?: string | null }>; // Neu!
-  activePrivatePartner: string | null; // Neu!
-  unreadDMs: { [username: string]: boolean }; // Neu!
-  onSelectPrivatePartner: (partner: string | null) => void; // Neu!
+  onCreateTextChannel: (name: string, minRole: string) => void;
+  allUsers: Array<{ username: string; role: string; online: boolean; socketId: string | null; avatar?: string | null }>;
+  activePrivatePartner: string | null;
+  unreadDMs: { [username: string]: boolean };
+  onSelectPrivatePartner: (partner: string | null) => void;
+  roles: RoleInfo[];
 }
-
-const ROLE_PRIORITY: { [key: string]: number } = {
-  guest: 1,
-  member: 2,
-  admin: 3
-};
 
 const getRoleIcon = (role: string) => {
   switch (role) {
@@ -48,7 +51,6 @@ const getRoleIcon = (role: string) => {
     default: return '👤';
   }
 };
-
 
 export const ChannelList: React.FC<ChannelListProps> = ({
   channels,
@@ -68,7 +70,8 @@ export const ChannelList: React.FC<ChannelListProps> = ({
   allUsers,
   activePrivatePartner,
   unreadDMs,
-  onSelectPrivatePartner
+  onSelectPrivatePartner,
+  roles = []
 }) => {
   const { t } = useTranslation();
   // States für Sprachkanal-Erstellung
@@ -81,17 +84,29 @@ export const ChannelList: React.FC<ChannelListProps> = ({
   const [textName, setTextName] = useState('');
   const [textMinRole, setTextMinRole] = useState('guest');
 
+  const getUsernameColor = (name: string, fallbackRole: string) => {
+    if (name === 'System') return '#94a3b8';
+    const userObj = allUsers.find(u => u.username === name);
+    const actualRole = userObj ? userObj.role : fallbackRole;
+    const roleObj = roles.find(r => r.name === actualRole);
+    return roleObj ? roleObj.color : '#ffffff';
+  };
 
-  const userPriority = ROLE_PRIORITY[userRole] || 1;
+  // Helper to check dynamic role visibility/access priority
+  const hasAccess = (minRoleName: string) => {
+    if (userRole === 'admin') return true;
+    if (userRole === minRoleName) return true;
+    
+    // Fallback order: admin > member > guest
+    const priority: { [key: string]: number } = { guest: 1, member: 2, admin: 3 };
+    const userPri = priority[userRole] || 1;
+    const minPri = priority[minRoleName] || 1;
+    return userPri >= minPri;
+  };
 
-  // Filter sichtbar ab Rolle
-  const visibleVoiceChannels = channels.filter(
-    (c) => userPriority >= (ROLE_PRIORITY[c.minRole] || 1)
-  );
-
-  const visibleTextChannels = textChannels.filter(
-    (c) => userPriority >= (ROLE_PRIORITY[c.minRole] || 1)
-  );
+  // Filter visible channels based on permissions
+  const visibleVoiceChannels = channels.filter(c => hasAccess(c.minRole));
+  const visibleTextChannels = textChannels.filter(c => hasAccess(c.minRole));
 
   const handleVoiceSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,9 +189,11 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                 className="input-field"
                 style={{ padding: '2px 4px', fontSize: '0.75rem', width: 'auto', flex: 1 }}
               >
-                <option value="guest">{t('channels.role_guest_option')}</option>
-                <option value="member">{t('channels.role_member_option')}</option>
-                <option value="admin">{t('channels.role_admin_option')}</option>
+                {roles.map((r) => (
+                  <option key={r.name} value={r.name}>
+                    {r.name.toUpperCase()}
+                  </option>
+                ))}
               </select>
             </div>
             <div style={{ display: 'flex', gap: '4px', marginTop: '2px' }}>
@@ -189,7 +206,6 @@ export const ChannelList: React.FC<ChannelListProps> = ({
             </div>
           </form>
         )}
-
 
         {/* Textkanal Liste */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -219,9 +235,8 @@ export const ChannelList: React.FC<ChannelListProps> = ({
               >
                 <span># {tc.name}</span>
                 <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  {t('channels.role_required_label')} {t('roles.' + tc.minRole)}
+                  {t('channels.role_required_label')} {tc.minRole.toUpperCase()}
                 </span>
-
               </div>
             );
           })}
@@ -290,9 +305,11 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                 className="input-field"
                 style={{ padding: '2px 4px', fontSize: '0.75rem', width: 'auto', flex: 1 }}
               >
-                <option value="guest">{t('channels.role_guest_option')}</option>
-                <option value="member">{t('channels.role_member_option')}</option>
-                <option value="admin">{t('channels.role_admin_option')}</option>
+                {roles.map((r) => (
+                  <option key={r.name} value={r.name}>
+                    {r.name.toUpperCase()}
+                  </option>
+                ))}
               </select>
             </div>
             <div style={{ display: 'flex', gap: '4px', marginTop: '2px' }}>
@@ -305,7 +322,6 @@ export const ChannelList: React.FC<ChannelListProps> = ({
             </div>
           </form>
         )}
-
 
         {/* Sprachkanal Liste */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -350,10 +366,9 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                     </button>
                   ) : (
                     <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                      {t('channels.role_required_label')} {t('roles.' + c.minRole)}
+                      {t('channels.role_required_label')} {c.minRole.toUpperCase()}
                     </span>
                   )}
-
                 </div>
 
                 {/* Teilnehmerliste im Sprachkanal */}
@@ -399,14 +414,15 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                               fontSize: '0.8rem',
                               border: localSpeaking ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
                               boxShadow: localSpeaking ? '0 0 8px #22c55e' : 'none',
-                              transition: 'all 0.15s ease'
+                              transition: 'all 0.15s ease',
+                              color: getUsernameColor(localUsername, userRole)
                             }}
                           >
                             {getRoleIcon(userRole)}
                           </div>
                         );
                       })()}
-                      <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 500, color: getUsernameColor(localUsername, userRole) }}>
                         {localUsername} ({t('channels.you')})
                       </span>
                       {isMuted && <span style={{ fontSize: '0.75rem' }}>🔇</span>}
@@ -452,13 +468,14 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                                 fontSize: '0.8rem',
                                 border: p.isSpeaking ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
                                 boxShadow: p.isSpeaking ? '0 0 8px #22c55e' : 'none',
-                                transition: 'all 0.15s ease'
+                                transition: 'all 0.15s ease',
+                                color: getUsernameColor(p.username, p.role)
                               }}
                             >
                               {getRoleIcon(p.role)}
                             </div>
                           )}
-                          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                          <span style={{ fontSize: '0.85rem', color: getUsernameColor(p.username, p.role) }}>
                             {p.username} 💬
                           </span>
                         </div>
@@ -483,7 +500,6 @@ export const ChannelList: React.FC<ChannelListProps> = ({
               {t('channels.no_other_users')}
             </span>
           ) : (
-
             [...allUsers.filter(u => u.username !== localUsername)]
               .sort((a, b) => {
                 if (a.online && !b.online) return -1;
@@ -493,6 +509,7 @@ export const ChannelList: React.FC<ChannelListProps> = ({
               .map((u) => {
                 const isActive = activePrivatePartner === u.username;
                 const hasUnread = unreadDMs[u.username];
+                const usernameColor = getUsernameColor(u.username, u.role);
                 return (
                   <div
                     key={u.username}
@@ -545,7 +562,7 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                               justifyContent: 'center',
                               fontSize: '0.75rem',
                               fontWeight: 700,
-                              color: 'var(--accent-color)'
+                              color: usernameColor
                             }}
                           >
                             {u.username.charAt(0).toUpperCase()}
@@ -564,7 +581,7 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                           }}
                         />
                       </div>
-                      <span>{u.username}</span>
+                      <span style={{ color: usernameColor }}>{u.username}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       {hasUnread && (
@@ -580,9 +597,8 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                         >
                           {t('channels.dm_new')}
                         </span>
-
                       )}
-                      <span style={{ fontSize: '0.75rem' }}>
+                      <span style={{ fontSize: '0.75rem', color: usernameColor }}>
                         {getRoleIcon(u.role)}
                       </span>
                     </div>

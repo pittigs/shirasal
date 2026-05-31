@@ -15,6 +15,14 @@ interface Channel {
   minRole: string;
 }
 
+interface RoleInfo {
+  name: string;
+  color: string;
+  canManageRoles: boolean;
+  canManageChannels: boolean;
+  canManageUsers: boolean;
+}
+
 interface AdminPanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -24,6 +32,10 @@ interface AdminPanelProps {
   onChangeUserRole: (socketId: string, role: string) => void;
   onChangeUserNickname: (socketId: string, nickname: string) => void; // Neu!
   onChangeChannelPermission: (type: 'voice' | 'text', id: string, minRole: string) => void;
+  roles: RoleInfo[];
+  onCreateRole: (name: string, color: string, canManageRoles: boolean, canManageChannels: boolean, canManageUsers: boolean) => void;
+  onUpdateRole: (name: string, color: string, canManageRoles: boolean, canManageChannels: boolean, canManageUsers: boolean) => void;
+  onDeleteRole: (name: string) => void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
@@ -34,12 +46,55 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   textChannels,
   onChangeUserRole,
   onChangeUserNickname,
-  onChangeChannelPermission
+  onChangeChannelPermission,
+  roles,
+  onCreateRole,
+  onUpdateRole,
+  onDeleteRole
 }) => {
   const { t } = useTranslation();
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'channels'>('users');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'channels' | 'roles'>('users');
   // Lokaler State für temporäre Namensedits der Benutzer
   const [editNicknames, setEditNicknames] = useState<{ [socketId: string]: string }>({});
+
+  // Role Form States
+  const [roleName, setRoleName] = useState('');
+  const [roleColor, setRoleColor] = useState('#ffffff');
+  const [permRoles, setPermRoles] = useState(false);
+  const [permChannels, setPermChannels] = useState(false);
+  const [permUsers, setPermUsers] = useState(false);
+  const [editingRole, setEditingRole] = useState<RoleInfo | null>(null);
+
+  const resetRoleForm = () => {
+    setRoleName('');
+    setRoleColor('#ffffff');
+    setPermRoles(false);
+    setPermChannels(false);
+    setPermUsers(false);
+    setEditingRole(null);
+  };
+
+  const handleSaveRole = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!roleName.trim()) return;
+    const cleanName = roleName.trim().toLowerCase();
+    
+    if (editingRole) {
+      onUpdateRole(cleanName, roleColor, permRoles, permChannels, permUsers);
+    } else {
+      onCreateRole(cleanName, roleColor, permRoles, permChannels, permUsers);
+    }
+    resetRoleForm();
+  };
+
+  const handleEditRoleClick = (r: RoleInfo) => {
+    setEditingRole(r);
+    setRoleName(r.name);
+    setRoleColor(r.color);
+    setPermRoles(r.canManageRoles);
+    setPermChannels(r.canManageChannels);
+    setPermUsers(r.canManageUsers);
+  };
 
   if (!isOpen) return null;
 
@@ -134,6 +189,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           >
             {t('admin_panel.tab_channels')}
           </button>
+          <button
+            onClick={() => setActiveSubTab('roles')}
+            className={activeSubTab === 'roles' ? 'btn-primary' : 'btn-secondary'}
+            style={{ padding: '6px 12px', fontSize: '0.85rem' }}
+          >
+            {t('admin_panel.tab_roles') || 'Rollen-Verwaltung'}
+          </button>
 
         </div>
 
@@ -210,9 +272,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               border: '1px solid rgba(255,255,255,0.1)'
                             }}
                           >
-                            <option value="guest">{t('admin_panel.role_guest_option')}</option>
-                            <option value="member">{t('admin_panel.role_member_option')}</option>
-                            <option value="admin">{t('admin_panel.role_admin_option')}</option>
+                            {roles.map((r) => (
+                              <option key={r.name} value={r.name}>
+                                {r.name.toUpperCase()}
+                              </option>
+                            ))}
                           </select>
                         </div>
                       </div>
@@ -261,9 +325,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             background: 'rgba(0,0,0,0.3)'
                           }}
                         >
-                          <option value="guest">{t('common.guest')}</option>
-                          <option value="member">{t('common.member')}</option>
-                          <option value="admin">{t('common.admin')}</option>
+                          {roles.map((r) => (
+                            <option key={r.name} value={r.name}>
+                              {r.name.toUpperCase()}
+                            </option>
+                          ))}
                         </select>
                       </div>
                     </div>
@@ -304,9 +370,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             background: 'rgba(0,0,0,0.3)'
                           }}
                         >
-                          <option value="guest">{t('common.guest')}</option>
-                          <option value="member">{t('common.member')}</option>
-                          <option value="admin">{t('common.admin')}</option>
+                          {roles.map((r) => (
+                            <option key={r.name} value={r.name}>
+                              {r.name.toUpperCase()}
+                            </option>
+                          ))}
                         </select>
                       </div>
                     </div>
@@ -314,6 +382,167 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               </div>
 
+            </div>
+          )}
+
+          {/* TAB 3: ROLES MANAGER */}
+          {activeSubTab === 'roles' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Form to create/edit role */}
+              <form onSubmit={handleSaveRole} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--accent-color)', margin: 0 }}>
+                  {editingRole ? `Rolle bearbeiten: ${editingRole.name.toUpperCase()}` : 'Neue Rolle erstellen'}
+                </h4>
+                
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 2, minWidth: '150px' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Rollen-Name</label>
+                    <input
+                      type="text"
+                      placeholder="z.B. moderator"
+                      value={roleName}
+                      onChange={(e) => setRoleName(e.target.value)}
+                      disabled={!!editingRole}
+                      className="input-field"
+                      style={{ padding: '6px 10px', fontSize: '0.85rem' }}
+                      required
+                    />
+                  </div>
+                  
+                  <div style={{ flex: 1, minWidth: '80px' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Farbe</label>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <input
+                        type="color"
+                        value={roleColor}
+                        onChange={(e) => setRoleColor(e.target.value)}
+                        style={{ width: '36px', height: '32px', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
+                      />
+                      <input
+                        type="text"
+                        value={roleColor}
+                        onChange={(e) => setRoleColor(e.target.value)}
+                        className="input-field"
+                        style={{ padding: '4px 6px', fontSize: '0.8rem', width: '70px', height: '32px', boxSizing: 'border-box' }}
+                        maxLength={7}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Berechtigungen</span>
+                  
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={permRoles}
+                      onChange={(e) => setPermRoles(e.target.checked)}
+                      style={{ accentColor: 'var(--accent-color)' }}
+                    />
+                    Rollen verwalten (canManageRoles)
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={permChannels}
+                      onChange={(e) => setPermChannels(e.target.checked)}
+                      style={{ accentColor: 'var(--accent-color)' }}
+                    />
+                    Kanäle verwalten (canManageChannels)
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={permUsers}
+                      onChange={(e) => setPermUsers(e.target.checked)}
+                      style={{ accentColor: 'var(--accent-color)' }}
+                    />
+                    Benutzer verwalten (canManageUsers)
+                  </label>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                  {editingRole && (
+                    <button type="button" onClick={resetRoleForm} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
+                      Abbrechen
+                    </button>
+                  )}
+                  <button type="submit" className="btn-primary" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
+                    {editingRole ? 'Änderungen speichern' : 'Rolle anlegen'}
+                  </button>
+                </div>
+              </form>
+
+              {/* Roles List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Registrierte Rollen</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {roles.map((r) => {
+                    const isStandard = r.name === 'admin' || r.name === 'member' || r.name === 'guest';
+                    return (
+                      <div
+                        key={r.name}
+                        style={{
+                          background: 'rgba(255,255,255,0.02)',
+                          border: '1px solid rgba(255,255,255,0.05)',
+                          borderRadius: '8px',
+                          padding: '10px 14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '12px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: r.color }} />
+                          <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff' }}>
+                            {r.name.toUpperCase()}
+                          </span>
+                          {isStandard && (
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                              System
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          {/* Permissions summary icons */}
+                          <div style={{ display: 'flex', gap: '6px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                            {r.canManageRoles && <span title="Rollen verwalten">🛡️ Roles</span>}
+                            {r.canManageChannels && <span title="Kanäle verwalten">💬 Channels</span>}
+                            {r.canManageUsers && <span title="Benutzer verwalten">👥 Users</span>}
+                            {!r.canManageRoles && !r.canManageChannels && !r.canManageUsers && <span style={{ color: 'var(--text-muted)' }}>Keine Rechte</span>}
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleEditRoleClick(r)}
+                              className="btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                            >
+                              Bearbeiten
+                            </button>
+                            {!isStandard && (
+                              <button
+                                type="button"
+                                onClick={() => onDeleteRole(r.name)}
+                                className="btn-secondary"
+                                style={{ padding: '4px 8px', fontSize: '0.75rem', borderColor: '#ef4444', color: '#ef4444' }}
+                              >
+                                Löschen
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
 

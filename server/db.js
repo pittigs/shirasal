@@ -79,6 +79,37 @@ export const init = async () => {
     });
     console.log('Tabelle "private_messages" erstellt.');
   }
+
+  // Create roles table
+  if (!(await knex.schema.hasTable('roles'))) {
+    await knex.schema.createTable('roles', (table) => {
+      table.string('name', 50).primary();
+      table.string('color', 20).notNullable();
+      table.boolean('canManageRoles').defaultTo(false);
+      table.boolean('canManageChannels').defaultTo(false);
+      table.boolean('canManageUsers').defaultTo(false);
+    });
+    console.log('Tabelle "roles" erstellt.');
+    
+    // Insert default roles
+    await knex('roles').insert([
+      { name: 'admin', color: '#ff4a4a', canManageRoles: true, canManageChannels: true, canManageUsers: true },
+      { name: 'member', color: '#4aff4a', canManageRoles: false, canManageChannels: false, canManageUsers: false },
+      { name: 'guest', color: '#aaaaaa', canManageRoles: false, canManageChannels: false, canManageUsers: false }
+    ]);
+    console.log('Standardrollen in Tabelle "roles" eingefügt.');
+  }
+
+  // Create private message reactions table
+  if (!(await knex.schema.hasTable('private_message_reactions'))) {
+    await knex.schema.createTable('private_message_reactions', (table) => {
+      table.string('messageId', 50).notNullable();
+      table.string('emoji', 50).notNullable();
+      table.string('username', 100).notNullable();
+      table.primary(['messageId', 'emoji', 'username']);
+    });
+    console.log('Tabelle "private_message_reactions" erstellt.');
+  }
 };
 
 export const saveUser = async (accountKey, username, role, avatar) => {
@@ -92,7 +123,6 @@ export const saveUser = async (accountKey, username, role, avatar) => {
   }
 };
 
-
 export const getUser = async (accountKey) => {
   return knex('users').where({ accountKey }).first();
 };
@@ -100,7 +130,6 @@ export const getUser = async (accountKey) => {
 export const getAllUsers = async () => {
   return knex('users').select('username', 'role', 'avatar');
 };
-
 
 export const savePrivateMessage = async (id, senderUsername, senderRole, receiverUsername, text, timestamp) => {
   await knex('private_messages').insert({
@@ -119,14 +148,30 @@ export const getPrivateMessages = async (username) => {
     .orWhere({ receiverUsername: username })
     .orderBy('created_at', 'asc');
   
-  // Format to standard JS object
+  if (list.length === 0) return [];
+
+  const messageIds = list.map(m => m.id);
+  const reactions = await knex('private_message_reactions').whereIn('messageId', messageIds);
+
+  const reactionsMap = {};
+  reactions.forEach(r => {
+    if (!reactionsMap[r.messageId]) {
+      reactionsMap[r.messageId] = {};
+    }
+    if (!reactionsMap[r.messageId][r.emoji]) {
+      reactionsMap[r.messageId][r.emoji] = [];
+    }
+    reactionsMap[r.messageId][r.emoji].push(r.username);
+  });
+
   return list.map(m => ({
     id: m.id,
     senderUsername: m.senderUsername,
     senderRole: m.senderRole,
     receiverUsername: m.receiverUsername,
     text: m.text,
-    timestamp: m.timestamp
+    timestamp: m.timestamp,
+    reactions: reactionsMap[m.id] || {}
   }));
 };
 
@@ -137,4 +182,97 @@ export const updateUsernameInPns = async (oldName, newName) => {
   await knex('private_messages')
     .where({ receiverUsername: oldName })
     .update({ receiverUsername: newName });
+  await knex('private_message_reactions')
+    .where({ username: oldName })
+    .update({ username: newName });
+};
+
+// --- ROLES DATABASE API ---
+
+export const getAllRoles = async () => {
+  return knex('roles').select('*');
+};
+
+export const saveRole = async (name, color, canManageRoles, canManageChannels, canManageUsers) => {
+  const existing = await knex('roles').where({ name }).first();
+  const data = {
+    color,
+    canManageRoles: !!canManageRoles,
+    canManageChannels: !!canManageChannels,
+    canManageUsers: !!canManageUsers
+  };
+  if (existing) {
+    await knex('roles').where({ name }).update(data);
+  } else {
+    await knex('roles').insert({ name, ...data });
+  }
+};
+
+export const deleteRole = async (name) => {
+  if (name === 'admin' || name === 'member' || name === 'guest') return;
+  await knex('roles').where({ name }).delete();
+};
+
+// --- PRIVATE MESSAGE REACTIONS API ---
+
+export const togglePrivateMessageReaction = async (messageId, emoji, username) => {
+  const existing = await knex('private_message_reactions')
+    .where({ messageId, emoji, username })
+    .first();
+  if (existing) {
+    await knex('private_message_reactions')
+      .where({ messageId, emoji, username })
+      .delete();
+    return false;
+  } else {
+    await knex('private_message_reactions')
+      .insert({ messageId, emoji, username });
+    return true;
+  }
+};
+
+export const getPrivateMessageReactions = async (messageId) => {
+  const list = await knex('private_message_reactions').where({ messageId });
+  const map = {};
+  list.forEach(r => {
+    if (!map[r.emoji]) map[r.emoji] = [];
+    map[r.emoji].push(r.username);
+  });
+  return map;
+};
+
+export const searchPrivateMessages = async (username, partnerUsername, query) => {
+  const list = await knex('private_messages')
+    .where(function() {
+      this.where({ senderUsername: username, receiverUsername: partnerUsername })
+        .orWhere({ senderUsername: partnerUsername, receiverUsername: username });
+    })
+    .andWhere('text', 'like', `%${query}%`)
+    .orderBy('created_at', 'asc');
+
+  if (list.length === 0) return [];
+
+  const messageIds = list.map(m => m.id);
+  const reactions = await knex('private_message_reactions').whereIn('messageId', messageIds);
+
+  const reactionsMap = {};
+  reactions.forEach(r => {
+    if (!reactionsMap[r.messageId]) {
+      reactionsMap[r.messageId] = {};
+    }
+    if (!reactionsMap[r.messageId][r.emoji]) {
+      reactionsMap[r.messageId][r.emoji] = [];
+    }
+    reactionsMap[r.messageId][r.emoji].push(r.username);
+  });
+
+  return list.map(m => ({
+    id: m.id,
+    senderUsername: m.senderUsername,
+    senderRole: m.senderRole,
+    receiverUsername: m.receiverUsername,
+    text: m.text,
+    timestamp: m.timestamp,
+    reactions: reactionsMap[m.id] || {}
+  }));
 };

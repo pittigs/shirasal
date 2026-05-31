@@ -101,10 +101,24 @@ const roomParticipants = {};
 // Liste aller online verbundenen Nutzer (mit detaillierten Sockets)
 const connectedUsers = {};
 
-// Hilfsfunktion: Sendet an alle verbundenen Admins die detaillierte Live-Nutzerliste
+const rolesCache = {};
+
+const hasPermission = (socket, permission) => {
+  const userRole = socket.data.role;
+  if (userRole === 'admin') return true;
+  const roleData = rolesCache[userRole];
+  return roleData ? !!roleData[permission] : false;
+};
+
+const broadcastRoles = () => {
+  const rolesList = Object.entries(rolesCache).map(([name, data]) => ({ name, ...data }));
+  io.emit('roles-list', rolesList);
+};
+
+// Hilfsfunktion: Sendet an alle verbundenen Admins/Moderatoren die detaillierte Live-Nutzerliste
 const broadcastConnectedUsersToAdmins = () => {
   const adminSockets = Array.from(io.sockets.sockets.values()).filter(
-    (s) => s.data.role === 'admin'
+    (s) => hasPermission(s, 'canManageUsers')
   );
   const userList = Object.values(connectedUsers);
   adminSockets.forEach((s) => {
@@ -156,6 +170,9 @@ io.on('connection', (socket) => {
   socket.emit('server-config', {
     allowDemoRoles: process.env.ALLOW_DEMO_ROLES === 'true'
   });
+
+  // Send roles definition to client
+  socket.emit('roles-list', Object.entries(rolesCache).map(([name, data]) => ({ name, ...data })));
 
   // Initiale Listen senden bei Verbindungsaufbau
   socket.emit('channels-list', channels);
@@ -345,8 +362,8 @@ io.on('connection', (socket) => {
 
   // 2. Nickname eines anderen Benutzers ändern (Admin-Feature)
   socket.on('change-user-nickname', async ({ targetSocketId, newNickname }) => {
-    if (socket.data.role !== 'admin') {
-      socket.emit('error-msg', 'Nur Admins dürfen Nicknames anderer Benutzer ändern.');
+    if (!hasPermission(socket, 'canManageUsers')) {
+      socket.emit('error-msg', 'Keine Berechtigung, Nicknames anderer Benutzer zu ändern.');
       return;
     }
 
@@ -408,8 +425,8 @@ io.on('connection', (socket) => {
   // --- LIVE RECHTEVERWALTUNG (ADMIN FEATURES) ---
 
   socket.on('change-user-role', async ({ targetSocketId, newRole }) => {
-    if (socket.data.role !== 'admin') {
-      socket.emit('error-msg', 'Nur Admins dürfen Benutzerrechte verwalten.');
+    if (!hasPermission(socket, 'canManageRoles')) {
+      socket.emit('error-msg', 'Keine Berechtigung, Benutzerrollen zu verwalten.');
       return;
     }
 
@@ -437,8 +454,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('change-channel-permission', ({ channelType, channelId, newMinRole }) => {
-    if (socket.data.role !== 'admin') {
-      socket.emit('error-msg', 'Nur Admins dürfen Kanallizenzen verwalten.');
+    if (!hasPermission(socket, 'canManageChannels')) {
+      socket.emit('error-msg', 'Keine Berechtigung, Kanalrechte zu verwalten.');
       return;
     }
 
@@ -628,9 +645,9 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('create-channel', ({ name, minRole, creatorRole }) => {
-    if (creatorRole !== 'admin') {
-      socket.emit('error-msg', 'Nur Admins können Kanäle erstellen.');
+  socket.on('create-channel', ({ name, minRole }) => {
+    if (!hasPermission(socket, 'canManageChannels')) {
+      socket.emit('error-msg', 'Keine Berechtigung, Kanäle zu erstellen.');
       return;
     }
 
@@ -642,6 +659,122 @@ io.on('connection', (socket) => {
 
     channels.push(newChannel);
     io.emit('channels-list', channels);
+  });
+
+  // --- EMOJI REACTION EVENTS ---
+
+  socket.on('toggle-reaction', ({ channelId, messageId, emoji }) => {
+    const activeChannel = channelId || 'general';
+    const channelMessages = chatMessagesByChannel[activeChannel] || [];
+    const msg = channelMessages.find(m => m.id === messageId);
+    if (msg) {
+      if (!msg.reactions) {
+        msg.reactions = {};
+      }
+      if (!msg.reactions[emoji]) {
+        msg.reactions[emoji] = [];
+      }
+      
+      const idx = msg.reactions[emoji].indexOf(socket.data.username);
+      if (idx > -1) {
+        msg.reactions[emoji].splice(idx, 1);
+        if (msg.reactions[emoji].length === 0) {
+          delete msg.reactions[emoji];
+        }
+      } else {
+        msg.reactions[emoji].push(socket.data.username);
+      }
+      
+      io.to(`text-${activeChannel}`).emit('message-reactions-updated', {
+        channelId: activeChannel,
+        messageId,
+        reactions: msg.reactions
+      });
+    }
+  });
+
+  socket.on('toggle-private-reaction', async ({ messageId, emoji, partnerUsername }) => {
+    try {
+      const username = socket.data.username;
+      if (!username) return;
+      
+      await db.togglePrivateMessageReaction(messageId, emoji, username);
+      const updatedReactions = await db.getPrivateMessageReactions(messageId);
+      
+      socket.emit('private-message-reactions-updated', { messageId, reactions: updatedReactions });
+      
+      const partnerConnection = Object.values(connectedUsers).find(c => c.username === partnerUsername);
+      if (partnerConnection) {
+        io.to(partnerConnection.socketId).emit('private-message-reactions-updated', { messageId, reactions: updatedReactions });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
+  // --- ROLE MANAGEMENT EVENTS ---
+
+  socket.on('create-role', async ({ name, color, canManageRoles, canManageChannels, canManageUsers }) => {
+    if (!hasPermission(socket, 'canManageRoles')) {
+      socket.emit('error-msg', 'Keine Berechtigung, Rollen zu verwalten.');
+      return;
+    }
+    try {
+      await db.saveRole(name, color, canManageRoles, canManageChannels, canManageUsers);
+      rolesCache[name] = { color, canManageRoles, canManageChannels, canManageUsers };
+      broadcastRoles();
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Erstellen der Rolle.');
+    }
+  });
+
+  socket.on('update-role', async ({ name, color, canManageRoles, canManageChannels, canManageUsers }) => {
+    if (!hasPermission(socket, 'canManageRoles')) {
+      socket.emit('error-msg', 'Keine Berechtigung, Rollen zu verwalten.');
+      return;
+    }
+    try {
+      await db.saveRole(name, color, canManageRoles, canManageChannels, canManageUsers);
+      rolesCache[name] = { color, canManageRoles, canManageChannels, canManageUsers };
+      broadcastRoles();
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Aktualisieren der Rolle.');
+    }
+  });
+
+  socket.on('delete-role', async ({ name }) => {
+    if (!hasPermission(socket, 'canManageRoles')) {
+      socket.emit('error-msg', 'Keine Berechtigung, Rollen zu verwalten.');
+      return;
+    }
+    if (name === 'admin' || name === 'member' || name === 'guest') {
+      socket.emit('error-msg', 'Standardrollen können nicht gelöscht werden.');
+      return;
+    }
+    try {
+      await db.deleteRole(name);
+      delete rolesCache[name];
+      broadcastRoles();
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Löschen der Rolle.');
+    }
+  });
+
+  // --- MESSAGE SEARCH EVENTS ---
+
+  socket.on('search-private-messages', async ({ partnerUsername, query }) => {
+    try {
+      const username = socket.data.username;
+      if (!username || !partnerUsername) return;
+      const results = await db.searchPrivateMessages(username, partnerUsername, query);
+      socket.emit('search-private-results', { partnerUsername, results });
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler bei der Suche nach DMs.');
+    }
   });
 
   socket.on('leave-room', () => {
@@ -689,6 +822,23 @@ if (isProd) {
 
 const startServer = async () => {
   await db.init();
+
+  // Load roles from database into cache
+  try {
+    const dbRoles = await db.getAllRoles();
+    dbRoles.forEach(r => {
+      rolesCache[r.name] = {
+        color: r.color,
+        canManageRoles: !!r.canManageRoles,
+        canManageChannels: !!r.canManageChannels,
+        canManageUsers: !!r.canManageUsers
+      };
+    });
+    console.log(`${Object.keys(rolesCache).length} Rollen erfolgreich in den Cache geladen.`);
+  } catch (err) {
+    console.error("Fehler beim Laden der Rollen in den Cache:", err);
+  }
+
   const PORT = process.env.PORT || 3001;
   httpServer.listen(PORT, () => {
     console.log(`Signaling server running on port ${PORT}`);
