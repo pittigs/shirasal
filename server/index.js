@@ -966,6 +966,14 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('yjs-awareness-update', ({ docId, update }) => {
+    socket.to(`doc-${docId}`).emit('yjs-awareness-update', { docId, update });
+  });
+
+  socket.on('yjs-awareness-request', ({ docId }) => {
+    socket.to(`doc-${docId}`).emit('yjs-awareness-request', { docId });
+  });
+
   socket.on('get-attachments', async ({ docId }) => {
     try {
       const list = await db.getAttachments(docId);

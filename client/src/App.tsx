@@ -1390,6 +1390,8 @@ export const App: React.FC = () => {
         socket={socket}
         userRole={role}
         hasPermission={hasPermission}
+        localUsername={username}
+        userColor={getUsernameColor(username, role)}
       />
     </div>
   )}

@@ -3,7 +3,11 @@ import * as Y from 'yjs';
 import Quill from 'quill';
 import { QuillBinding } from 'y-quill';
 import { useTranslation } from '../contexts/LanguageContext';
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
+import QuillCursors from 'quill-cursors';
 import 'quill/dist/quill.snow.css';
+
+Quill.register('modules/cursors', QuillCursors);
 
 interface DocumentInfo {
   id: string;
@@ -23,12 +27,16 @@ interface WorkspaceProps {
   socket: any;
   userRole: string;
   hasPermission: (permission: 'canManageRoles' | 'canManageChannels' | 'canManageUsers') => boolean;
+  localUsername: string;
+  userColor: string;
 }
 
 export const Workspace: React.FC<WorkspaceProps> = ({
   socket,
   userRole,
-  hasPermission
+  hasPermission,
+  localUsername,
+  userColor
 }) => {
   const { t } = useTranslation();
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
@@ -43,6 +51,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   const quillRef = useRef<Quill | null>(null);
   const bindingRef = useRef<QuillBinding | null>(null);
   const ydocRef = useRef<Y.Doc | null>(null);
+  const awarenessRef = useRef<Awareness | null>(null);
 
   // 1. Initial document list load
   useEffect(() => {
@@ -82,11 +91,22 @@ export const Workspace: React.FC<WorkspaceProps> = ({
         Y.applyUpdate(ydoc, new Uint8Array(payload.update), socket);
       }
 
+      // Initialize Yjs Awareness
+      const awareness = new Awareness(ydoc);
+      awarenessRef.current = awareness;
+
+      // Set user name and dynamically passed role color
+      awareness.setLocalStateField('user', {
+        name: localUsername,
+        color: userColor
+      });
+
       // Initialize Quill
       const quill = new Quill(editorContainerRef.current, {
         theme: 'snow',
         placeholder: 'Schreibe hier etwas kollaborativ...',
         modules: {
+          cursors: true,
           toolbar: [
             [{ header: [1, 2, 3, false] }],
             ['bold', 'italic', 'underline', 'strike'],
@@ -99,9 +119,9 @@ export const Workspace: React.FC<WorkspaceProps> = ({
       });
       quillRef.current = quill;
 
-      // Bind Quill to Yjs
+      // Bind Quill to Yjs and Awareness
       const type = ydoc.getText('content');
-      const binding = new QuillBinding(type, quill);
+      const binding = new QuillBinding(type, quill, awareness);
       bindingRef.current = binding;
 
       // Listen for local updates to transmit
@@ -110,11 +130,36 @@ export const Workspace: React.FC<WorkspaceProps> = ({
           socket.emit('yjs-update', { docId: activeDocId, update });
         }
       });
+
+      // Listen for local awareness updates to transmit
+      awareness.on('update', ({ added, updated, removed }: any, origin: any) => {
+        if (origin === 'local') {
+          const changedClients = added.concat(updated).concat(removed);
+          const updateBytes = encodeAwarenessUpdate(awareness, changedClients);
+          socket.emit('yjs-awareness-update', { docId: activeDocId, update: Array.from(updateBytes) });
+        }
+      });
+
+      // Request awareness state from existing clients in this document
+      socket.emit('yjs-awareness-request', { docId: activeDocId });
     };
 
     const handleYjsUpdate = (payload: { docId: string; update: ArrayBuffer | Uint8Array }) => {
       if (payload.docId === activeDocId && ydocRef.current) {
         Y.applyUpdate(ydocRef.current, new Uint8Array(payload.update), socket);
+      }
+    };
+
+    const handleAwarenessUpdate = (payload: { docId: string; update: number[] | Uint8Array }) => {
+      if (payload.docId === activeDocId && awarenessRef.current) {
+        applyAwarenessUpdate(awarenessRef.current, new Uint8Array(payload.update), socket);
+      }
+    };
+
+    const handleAwarenessRequest = (payload: { docId: string }) => {
+      if (payload.docId === activeDocId && awarenessRef.current && ydocRef.current) {
+        const localUpdate = encodeAwarenessUpdate(awarenessRef.current, [ydocRef.current.clientID]);
+        socket.emit('yjs-awareness-update', { docId: activeDocId, update: Array.from(localUpdate) });
       }
     };
 
@@ -126,6 +171,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({
 
     socket.on('document-init', handleDocumentInit);
     socket.on('yjs-update', handleYjsUpdate);
+    socket.on('yjs-awareness-update', handleAwarenessUpdate);
+    socket.on('yjs-awareness-request', handleAwarenessRequest);
     socket.on('attachments-list', handleAttachmentsList);
 
     return () => {
@@ -133,6 +180,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({
       socket.emit('leave-document');
       socket.off('document-init', handleDocumentInit);
       socket.off('yjs-update', handleYjsUpdate);
+      socket.off('yjs-awareness-update', handleAwarenessUpdate);
+      socket.off('yjs-awareness-request', handleAwarenessRequest);
       socket.off('attachments-list', handleAttachmentsList);
     };
   }, [socket, activeDocId]);
@@ -141,6 +190,10 @@ export const Workspace: React.FC<WorkspaceProps> = ({
     if (bindingRef.current) {
       bindingRef.current.destroy();
       bindingRef.current = null;
+    }
+    if (awarenessRef.current) {
+      awarenessRef.current.destroy();
+      awarenessRef.current = null;
     }
     if (ydocRef.current) {
       ydocRef.current.destroy();
