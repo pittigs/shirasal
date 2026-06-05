@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Room, RoomEvent, createLocalAudioTrack, ExternalE2EEKeyProvider } from 'livekit-client';
+import { Room, RoomEvent, createLocalAudioTrack } from 'livekit-client';
+import { ExternalE2EEKeyProvider } from 'livekit-client/e2ee';
 
 import { RnnoiseWorkletNode, loadRnnoise } from '@sapphi-red/web-noise-suppressor';
 import rnnoiseWorkletPath from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
