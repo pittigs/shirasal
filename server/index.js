@@ -1014,13 +1014,6 @@ io.on('connection', (socket) => {
     broadcastUsersState();
   });
 
-  socket.on('webrtc-signal', ({ targetId, signal }) => {
-    io.to(targetId).emit('webrtc-signal', {
-      senderId: socket.id,
-      signal
-    });
-  });
-
   // --- TEXT MESSAGE DISTRIBUTION ---
   
   socket.on('chat-message', ({ text, username, role, channelId }) => {
