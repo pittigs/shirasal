@@ -35,14 +35,22 @@ Wenn Sie die Option **"Selber hören" (Echomodus)** aktivieren, hören Sie Ihr e
 > Verwenden Sie bei eingeschaltetem Echomodus unbedingt Kopfhörer! Andernfalls wird der Ton der Lautsprecher wieder vom Mikrofon aufgenommen, was zu einer lauten, unangenehmen akustischen Schleife (Pfeifen) führt.
 
 ### Mikrofon klingt abgehackt, roboterhaft oder dumpf
-ShirAsal bietet eine Reihe von professionellen Hardware- und Software-Filtern, um die Qualität anzupassen:
-1. **Voice Activation Threshold (Noise Gate):** Der Regler bestimmt die Empfindlichkeit, ab der Ihre Stimme übertragen wird. Wenn Sie abgehackt klingen, stellen Sie den Regler weiter nach links (niedrigerer Schwellenwert). Wenn Hintergrundgeräusche übertragen werden, schieben Sie ihn weiter nach rechts.
-2. **Echo-Kompensation (AEC - Acoustic Echo Cancellation):** Verhindert, dass der Ton der anderen Benutzer aus Ihren Lautsprechern wieder in Ihr Mikrofon gelangt. Sollten Sie ein sehr gutes Headset oder Studiomikrofon besitzen und AEC die Stimme verzerrt, schalten Sie AEC in den Audio-Einstellungen aus.
-3. **Auto-Verstärkung (AGC - Automatic Gain Control):** Passt die Lautstärke Ihrer Stimme automatisch an. Kann bei manchen empfindlichen Mikrofonen zu Rauschen führen. Versuchen Sie, AGC zu deaktivieren, falls Ihr Ton übersteuert.
-4. **Tastatur-Hochpassfilter (HPF):** Filtert Frequenzen unter 150 Hz heraus. Das eliminiert tieffrequente Störgeräusche wie Tastaturanschläge (z. B. von mechanischen Tastaturen) oder das Brummen von Lüftern. Deaktivieren Sie ihn, falls Sie eine sehr tiefe Stimme haben und diese natürlicher klingen soll.
-5. **Browser-Noise Suppression (Filter-Button):** Nutzt die native Rauschunterdrückung des Browsers.
+ShirAsal bietet eine Reihe von professionellen Hardware- und Software-Filtern sowie vorgefertigten Klangprofilen, um die Qualität anzupassen:
+1. **Audio-Klangprofile (Equalizer & Compressor):** Im Profilbereich stehen drei Profile zur Auswahl:
+   - *Flat / Neutral*: Rohdaten ohne Bearbeitung.
+   - *Studio Voice*: Bass- und Höhen-Anhebung mit Dynamikkompressor für ein warmes Klangbild.
+   - *Clear Communication*: Frequenz-Boost bei 2.2 kHz mit Low-Cut (Hochpassfilter bei 200 Hz), um die Sprachverständlichkeit zu maximieren.
+2. **Voice Activation Threshold (Noise Gate):** Der Regler bestimmt die Empfindlichkeit, ab der Ihre Stimme übertragen wird. Wenn Sie abgehackt klingen, stellen Sie den Regler weiter nach links (niedrigerer Schwellenwert). Wenn Hintergrundgeräusche übertragen werden, schieben Sie ihn weiter nach rechts.
+3. **Echo-Kompensation (AEC - Acoustic Echo Cancellation):** Verhindert, dass der Ton der anderen Benutzer aus Ihren Lautsprechern wieder in Ihr Mikrofon gelangt. Sollten Sie ein sehr gutes Headset oder Studiomikrofon besitzen und AEC die Stimme verzerrt, schalten Sie AEC in den Audio-Einstellungen aus.
+4. **Auto-Verstärkung (AGC - Automatic Gain Control):** Passt die Lautstärke Ihrer Stimme automatisch an. Kann bei manchen empfindlichen Mikrofonen zu Rauschen führen. Versuchen Sie, AGC zu deaktivieren, falls Ihr Ton übersteuert.
+5. **Tastatur-Hochpassfilter (HPF):** Filtert Frequenzen unter 150 Hz heraus. Das eliminiert tieffrequente Störgeräusche wie Tastaturanschläge (z. B. von mechanischen Tastaturen) oder das Brummen von Lüftern. Deaktivieren Sie ihn, falls Sie eine sehr tiefe Stimme haben und diese natürlicher klingen soll.
+6. **Browser-Noise Suppression (Filter-Button):** Nutzt die native Rauschunterdrückung des Browsers.
    > [!TIP]
    > Wenn sowohl die Browser-Rauschunterdrückung als auch Web Audio API Filter aktiv sind, kann der Ton "unterwasserartig" klingen. Kalibrieren Sie diese Toggles schrittweise, um das beste Ergebnis für Ihre Hardware zu erzielen.
+
+### Wie kann ich die Lautstärke anderer Benutzer anpassen?
+Neben jedem Benutzer im Sprachkanal wird ein Lautstärkeregler (0% bis 200%) angezeigt. Diese Lautstärke wird rein clientseitig geregelt und wirkt sich nur auf Ihre persönliche Wiedergabe aus. ShirAsal speichert die eingestellte Lautstärke benutzernamebasiert im `LocalStorage` Ihres Browsers ab, sodass sie beim nächsten Login automatisch wiederhergestellt wird.
+
 
 ---
 
@@ -129,8 +137,21 @@ volumes:
 #### F: Mein Account-Key ist weg, wie erhalte ich wieder Admin-Rechte?
 A: Wenn Sie Ihren Key verlieren, können Sie sich nicht mehr als dieser Benutzer anmelden. Als Server-Administrator können Sie jedoch direkt in der SQL-Datenbank (Tabelle `users`) nach Ihrem Benutzernamen suchen und den `account_key` auslesen oder Ihre Rolle in einem anderen Account auf `admin` setzen.
 
+#### F: Ich habe ein Passwort festgelegt und es vergessen. Was kann ich tun?
+A: Wenn Sie Ihr Passwort vergessen haben, kann ein Server-Administrator das Feld `passwordHash` in der Tabelle `users` für Ihren Eintrag in der SQL-Datenbank leeren (auf `NULL` setzen). Danach können Sie sich wieder regulär nur mit Ihrem geheimen Account-Key anmelden und im Profilbereich ein neues Passwort festlegen.
+
+#### F: Mein 2FA-Gerät (Google Authenticator) ist verloren gegangen. Wie komme ich wieder in meinen Account?
+A: Der Server-Administrator kann in der Datenbank in der Tabelle `users` für Ihr Konto `twoFactorEnabled` auf `0` (bzw. `false`) und `twoFactorSecret` auf `NULL` setzen. Dadurch wird die Zwei-Faktor-Authentifizierung für Ihren Account deaktiviert.
+
+#### F: Was passiert mit meinem Account auf dem Demo-Server?
+A: Auf Servern, auf denen der Demo-Modus aktiviert ist (`ALLOW_DEMO_ROLES=true`), führt das Backend jede Minute eine Bereinigung durch. Dabei werden alle Benutzerkonten und die dazugehörigen Nachrichten gelöscht, die älter als 10 Minuten sind. Für dauerhafte Accounts muss der Demo-Modus deaktiviert werden (`ALLOW_DEMO_ROLES=false`).
+
+#### F: Wie kann ich mein gesamtes Benutzerkonto löschen?
+A: Sie können Ihr Konto selbstständig löschen. Gehen Sie dazu in Ihrem Profil auf "Konto löschen" und bestätigen Sie die Abfrage. Der Server löscht daraufhin Ihren Benutzerdatensatz sowie alle von Ihnen gesendeten Direktnachrichten (DMs) und Reaktionen vollständig aus der Datenbank.
+
 #### F: Wie kann ich Kanäle erstellen/löschen?
 A: Nur Benutzer mit der Rolle `admin` können Kanäle erstellen oder bearbeiten. Klicken Sie dazu auf den Button **"🛡️ Admin-Bereich"** oben rechts. Dort können Sie Berechtigungen für Sprach- und Textkanäle festlegen und verwalten, wer Zugang hat.
 
 #### F: Ist die Audio- und Video-Übertragung verschlüsselt?
 A: Ja. WebRTC erzwingt eine DTLS/SRTP-Verschlüsselung auf Protokollebene. Alle Sprachdaten und Videoströme werden direkt zwischen den Benutzern Ende-zu-Ende verschlüsselt übertragen.
+

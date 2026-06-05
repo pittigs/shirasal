@@ -28,12 +28,14 @@ You can test ShirAsal directly in your browser without installing anything:
 ## ✨ Features
 
 ### 📞 Real-Time Communications
-- **WebRTC Voice Chat:** Low latency, high-quality audio utilizing the Opus codec.
+- **WebRTC Voice Chat:** Low latency, high-quality audio utilizing the Opus codec. Forced **256 kbps (CD-quality)** bitrate.
 - **Screen Sharing (Display Streaming):** Peer-to-peer screen sharing with automated WebRTC renegotiation.
 - **Webcam Grid Stage:** Stream your camera and screen shares concurrently in a clean, responsive CSS video grid.
 - **Relay Fallback (TURN):** Seamless fallback to TURN servers (e.g., Coturn) for users behind symmetric NATs or firewalls.
 
 ### 🎙️ Advanced Audio Processing & Filters
+- **Audio Klangprofile (Equalizer & Compressor):** Quick-presets including *Flat/Neutral*, *Studio Voice* (warm broadcast tone), and *Clear Communication* (emphasizing speech clarity).
+- **Per-User Local Volume Controls:** Adjust and customize volume levels for other users independently (0% to 200%). Settings are stored username-based in browser `LocalStorage`.
 - **Noise Gate / Voice Threshold:** Calibrate microphone sensitivity to exclude breathing and background noise.
 - **Acoustic Echo Cancellation (AEC):** Filter echo when utilizing speakers.
 - **Automatic Gain Control (AGC):** Automatically normalize voice volume.
@@ -52,10 +54,21 @@ You can test ShirAsal directly in your browser without installing anything:
 - **Multi-Language (i18n):** Support for both **German (DE)** and **English (EN)** with automatic browser detection.
 
 ### 🛡️ Administration & Security
+- **Multi-Factor Authentication:** Optional password hashing (PBKDF2) and **Two-Factor Authentication (2FA/TOTP)**.
+- **Hardware Passkeys (WebAuthn):** Register hardware keys (TouchID, FaceID, Windows Hello) for passwordless, secure logins.
 - **Role-Based Permissions:** Admin, Member, and Guest tiers.
 - **Live Rights Manager:** Admins can promote/demote users and rename participants live.
 - **Key-Based Authentication:** Passwordless key logins. No email registration required.
+- **Key-Blurring-Effect:** Important account keys are blurred out by default and only shown on hover.
 - **Mandatory E2EE:** Enforced DTLS key exchanges and SRTP media stream encryption.
+- **Self-Deletion:** Users can instantly delete their accounts (along with their DMs/reactions) from the profile tab.
+
+---
+
+## 📖 Documentation
+Detailed guides for getting started and configuring the project:
+* 📘 **[Onboarding & Architecture Guide (ONBOARDING.md)](docs/ONBOARDING.md)** - File structure details, WebRTC voice pipeline, and how to set up local development.
+* 📕 **[Troubleshooting & Administration Guide (troubleshooting.md)](docs/troubleshooting.md)** - Troubleshooting micro/audio issues, NAT/network configuration, and database administration.
 
 ---
 
