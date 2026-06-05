@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Room, RoomEvent, ExternalE2EEKeyProvider, LocalAudioTrack } from 'livekit-client';
+import { Room, RoomEvent, ExternalE2EEKeyProvider, LocalAudioTrack, AudioPresets } from 'livekit-client';
 
 import { RnnoiseWorkletNode, loadRnnoise } from '@sapphi-red/web-noise-suppressor';
 import rnnoiseWorkletPath from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
@@ -362,7 +362,7 @@ export const useWebRTC = () => {
         const audioTracks = streamToSend.getAudioTracks();
         if (audioTracks.length > 0) {
           const localTrack = new LocalAudioTrack(audioTracks[0], undefined, true);
-          await room.localParticipant.publishTrack(localTrack, { audioBitrate: 256000 });
+          await room.localParticipant.publishTrack(localTrack, { audioPreset: AudioPresets.musicHighQualityStereo });
         }
       }
 
@@ -697,7 +697,7 @@ export const useWebRTC = () => {
         }
         if (newTrack) {
           const localTrack = new LocalAudioTrack(newTrack, undefined, true);
-          await room.localParticipant.publishTrack(localTrack, { audioBitrate: 256000 });
+          await room.localParticipant.publishTrack(localTrack, { audioPreset: AudioPresets.musicHighQualityStereo });
         }
       }
     } catch (err) {
