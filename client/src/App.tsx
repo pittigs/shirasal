@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useWebRTC } from './hooks/useWebRTC';
 import { useTranslation } from './contexts/LanguageContext';
 
