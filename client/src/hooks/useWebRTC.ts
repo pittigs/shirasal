@@ -359,9 +359,9 @@ export const useWebRTC = () => {
       await keyProvider.setKey(derivedKey);
 
       const room = new Room({
-        e2ee: {
+        encryption: {
           keyProvider,
-          worker: new Worker(new URL('livekit-client/dist/livekit-client.e2ee.worker.js', import.meta.url))
+          worker: new Worker(new URL('livekit-client/e2ee-worker', import.meta.url), { type: 'module' })
         },
         publishDefaults: {
           audioBitrate: 256000,
