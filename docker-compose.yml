@@ -84,7 +84,6 @@ services:
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml
     ports:
-      - "7880:7880"
       - "7881:7881"
       - "50000-50100:50000-50100/udp"
     labels:
