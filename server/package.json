@@ -1,6 +1,6 @@
 {
   "name": "voice-chat-server",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Signaling and Chat server for Voice-Chat app",
   "main": "index.js",
   "type": "module",
