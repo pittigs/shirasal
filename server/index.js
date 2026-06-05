@@ -9,6 +9,80 @@ import { fileURLToPath } from 'url';
 import * as db from './db.js';
 import { authenticateLdap } from './ldap.js';
 import * as Y from 'yjs';
+import crypto from 'crypto';
+import {
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
+  generateAuthenticationOptions,
+  verifyAuthenticationResponse,
+} from '@simplewebauthn/server';
+
+// --- SECURITY HELPERS ---
+
+const hashPassword = (password) => {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+};
+
+const verifyPassword = (password, storedHash) => {
+  if (!storedHash) return false;
+  const [salt, hash] = storedHash.split(':');
+  const checkHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  return hash === checkHash;
+};
+
+const base32Decode = (str) => {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bin = '';
+  for (let i = 0; i < str.length; i++) {
+    const val = alphabet.indexOf(str[i].toUpperCase());
+    if (val >= 0) {
+      bin += val.toString(2).padStart(5, '0');
+    }
+  }
+  const bytes = [];
+  for (let i = 0; i < bin.length; i += 8) {
+    if (i + 8 <= bin.length) {
+      bytes.push(parseInt(bin.substr(i, 8), 2));
+    }
+  }
+  return Buffer.from(bytes);
+};
+
+const verifyTotp = (secret, token) => {
+  const key = base32Decode(secret);
+  const timeStep = Math.floor(Date.now() / 30000);
+  
+  for (let i = -1; i <= 1; i++) {
+    const step = timeStep + i;
+    const buffer = Buffer.alloc(8);
+    buffer.writeUInt32BE(Math.floor(step / 0x100000000), 0);
+    buffer.writeUInt32BE(step % 0x100000000, 4);
+    
+    const hmac = crypto.createHmac('sha1', key).update(buffer).digest();
+    const offset = hmac[hmac.length - 1] & 0xf;
+    const codeVal = ((hmac[offset] & 0x7f) << 24) |
+                    ((hmac[offset + 1] & 0xff) << 16) |
+                    ((hmac[offset + 2] & 0xff) << 8) |
+                    (hmac[offset + 3] & 0xff);
+    const code = (codeVal % 1000000).toString().padStart(6, '0');
+    if (code === token) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const generateTotpSecret = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let secret = '';
+  const bytes = crypto.randomBytes(10);
+  for (let i = 0; i < bytes.length; i++) {
+    secret += chars[bytes[i] % 32];
+  }
+  return secret;
+};
 
 const app = express();
 app.use(cors());
@@ -202,7 +276,7 @@ io.on('connection', (socket) => {
 
   // --- ACCOUNT MANAGEMENT SYSTEM ---
 
-  socket.on('create-account', async ({ role }) => {
+  socket.on('create-account', async ({ role, password }) => {
     const username = generateUsername();
     const accountKey = generateAccountKey();
     
@@ -223,15 +297,9 @@ io.on('connection', (socket) => {
       }
     }
     
-    const newUser = {
-      accountKey,
-      username,
-      role: chosenRole,
-      avatar: null
-    };
-
     try {
-      await db.saveUser(accountKey, username, chosenRole, null);
+      const passwordHash = password ? hashPassword(password) : null;
+      await db.saveUser(accountKey, username, chosenRole, null, passwordHash);
       console.log(`Account erstellt: ${username} (${chosenRole})`);
       
       socket.data.username = username;
@@ -249,7 +317,15 @@ io.on('connection', (socket) => {
         currentTextRoom: 'general'
       };
 
-      socket.emit('account-created', newUser);
+      socket.emit('account-created', {
+        username,
+        role: chosenRole,
+        accountKey,
+        avatar: null,
+        twoFactorEnabled: false,
+        hasPassword: !!passwordHash,
+        hasPasskeys: false
+      });
       await sendPrivateHistory(socket, username);
       socket.join('text-general');
       broadcastUsersState();
@@ -259,10 +335,26 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('login-account', async ({ accountKey }) => {
+  socket.on('login-account', async ({ accountKey, password, token }) => {
     try {
       const user = await db.getUser(accountKey);
       if (user) {
+        // 1. Password check
+        if (user.passwordHash) {
+          if (!password || !verifyPassword(password, user.passwordHash)) {
+            socket.emit('login-error', 'Ungültiges Passwort.');
+            return;
+          }
+        }
+
+        // 2. 2FA Check
+        if (user.twoFactorEnabled) {
+          if (!token || !verifyTotp(user.twoFactorSecret, token)) {
+            socket.emit('login-2fa-required', { accountKey });
+            return;
+          }
+        }
+
         console.log(`Erfolgreicher Login: ${user.username} (${user.role})`);
         
         socket.data.username = user.username;
@@ -280,7 +372,15 @@ io.on('connection', (socket) => {
           currentTextRoom: 'general'
         };
 
-        socket.emit('login-success', user);
+        socket.emit('login-success', {
+          username: user.username,
+          role: user.role,
+          accountKey: user.accountKey,
+          avatar: user.avatar,
+          twoFactorEnabled: !!user.twoFactorEnabled,
+          hasPassword: !!user.passwordHash,
+          hasPasskeys: user.passkeyCredentials ? JSON.parse(user.passkeyCredentials).length > 0 : false
+        });
         await sendPrivateHistory(socket, user.username);
         socket.join('text-general');
         broadcastUsersState();
@@ -290,6 +390,227 @@ io.on('connection', (socket) => {
     } catch (err) {
       console.error(err);
       socket.emit('login-error', 'Datenbankfehler beim Login.');
+    }
+  });
+
+  // --- PASSWORD & 2FA MANAGEMENT EVENTS ---
+
+  socket.on('set-password', async ({ password }) => {
+    const key = socket.data.accountKey;
+    if (!key) return;
+    try {
+      const hash = password ? hashPassword(password) : null;
+      await db.saveUser(key, undefined, undefined, undefined, undefined, hash);
+      socket.emit('password-updated', { hasPassword: !!hash });
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Speichern des Passworts.');
+    }
+  });
+
+  socket.on('setup-2fa-start', async () => {
+    const key = socket.data.accountKey;
+    if (!key) return;
+    const secret = generateTotpSecret();
+    socket.data.temp2faSecret = secret;
+    socket.emit('setup-2fa-secret', { secret });
+  });
+
+  socket.on('setup-2fa-verify', async ({ token }) => {
+    const key = socket.data.accountKey;
+    const secret = socket.data.temp2faSecret;
+    if (!key || !secret) return;
+
+    if (verifyTotp(secret, token)) {
+      await db.saveUser(key, undefined, undefined, undefined, undefined, undefined, secret, true);
+      socket.data.temp2faSecret = null;
+      socket.emit('2fa-setup-success');
+    } else {
+      socket.emit('error-msg', 'Ungültiger 2FA-Code. Bitte erneut versuchen.');
+    }
+  });
+
+  socket.on('disable-2fa', async () => {
+    const key = socket.data.accountKey;
+    if (!key) return;
+    await db.saveUser(key, undefined, undefined, undefined, undefined, undefined, null, false);
+    socket.emit('2fa-disabled-success');
+  });
+
+  // --- PASSKEY / WEBAUTHN SOCKET EVENTS ---
+
+  socket.on('register-passkey-start', async ({ hostname }) => {
+    const key = socket.data.accountKey;
+    if (!key) return;
+    try {
+      const user = await db.getUser(key);
+      const passkeys = user.passkeyCredentials ? JSON.parse(user.passkeyCredentials) : [];
+      
+      const options = await generateRegistrationOptions({
+        rpName: 'ShirAsal',
+        rpID: hostname,
+        userID: Buffer.from(key),
+        userName: user.username,
+        attestationType: 'none',
+        authenticatorSelection: {
+          residentKey: 'preferred',
+          userVerification: 'preferred',
+        },
+        excludeCredentials: passkeys.map(p => ({
+          id: Buffer.from(p.credentialID, 'base64url'),
+          type: 'public-key',
+        })),
+      });
+
+      socket.data.currentChallenge = options.challenge;
+      socket.emit('register-passkey-options', options);
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Starten der Passkey-Registrierung: ' + err.message);
+    }
+  });
+
+  socket.on('register-passkey-finish', async ({ credential, hostname, origin }) => {
+    const key = socket.data.accountKey;
+    if (!key) return;
+    try {
+      const user = await db.getUser(key);
+      const expectedChallenge = socket.data.currentChallenge;
+      
+      const verification = await verifyRegistrationResponse({
+        response: credential,
+        expectedChallenge,
+        expectedOrigin: origin,
+        expectedRPID: hostname,
+      });
+
+      if (verification.verified) {
+        const { registrationInfo } = verification;
+        const { credentialID, credentialPublicKey, counter } = registrationInfo;
+        
+        const currentPasskeys = user.passkeyCredentials ? JSON.parse(user.passkeyCredentials) : [];
+        currentPasskeys.push({
+          credentialID: Buffer.from(credentialID).toString('base64url'),
+          credentialPublicKey: Buffer.from(credentialPublicKey).toString('base64url'),
+          counter,
+          transports: credential.response.transports || []
+        });
+
+        await db.saveUser(key, undefined, undefined, undefined, undefined, undefined, undefined, undefined, JSON.stringify(currentPasskeys));
+        socket.emit('register-passkey-success');
+      } else {
+        socket.emit('error-msg', 'Passkey-Registrierung fehlgeschlagen.');
+      }
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Abschließen der Passkey-Registrierung: ' + err.message);
+    }
+  });
+
+  socket.on('login-passkey-start', async ({ accountKey, hostname }) => {
+    try {
+      const user = await db.getUser(accountKey);
+      if (!user || !user.passkeyCredentials) {
+        socket.emit('login-error', 'Kein Passkey für diesen Account registriert.');
+        return;
+      }
+      const passkeys = JSON.parse(user.passkeyCredentials);
+      const options = await generateAuthenticationOptions({
+        rpID: hostname,
+        allowCredentials: passkeys.map(p => ({
+          id: Buffer.from(p.credentialID, 'base64url'),
+          type: 'public-key',
+          transports: p.transports,
+        })),
+        userVerification: 'preferred',
+      });
+
+      socket.data.currentChallenge = options.challenge;
+      socket.data.loginAccountKey = accountKey;
+      socket.emit('login-passkey-options', options);
+    } catch (err) {
+      console.error(err);
+      socket.emit('login-error', 'Fehler beim Starten des Passkey-Logins.');
+    }
+  });
+
+  socket.on('login-passkey-finish', async ({ credential, hostname, origin }) => {
+    const key = socket.data.loginAccountKey;
+    if (!key) return;
+    try {
+      const user = await db.getUser(key);
+      const passkeys = JSON.parse(user.passkeyCredentials);
+      const passkey = passkeys.find(p => p.credentialID === credential.id);
+      
+      if (!passkey) {
+        socket.emit('login-error', 'Ungültiger Passkey.');
+        return;
+      }
+
+      const verification = await verifyAuthenticationResponse({
+        response: credential,
+        expectedChallenge: socket.data.currentChallenge,
+        expectedOrigin: origin,
+        expectedRPID: hostname,
+        authenticator: {
+          credentialID: Buffer.from(passkey.credentialID, 'base64url'),
+          credentialPublicKey: Buffer.from(passkey.credentialPublicKey, 'base64url'),
+          counter: passkey.counter,
+        },
+      });
+
+      if (verification.verified) {
+        passkey.counter = verification.authenticationInfo.newCounter;
+        await db.saveUser(key, undefined, undefined, undefined, undefined, undefined, undefined, undefined, JSON.stringify(passkeys));
+
+        console.log(`Erfolgreicher Passkey-Login: ${user.username} (${user.role})`);
+        
+        socket.data.username = user.username;
+        socket.data.role = user.role;
+        socket.data.accountKey = key;
+        socket.data.avatar = user.avatar || null;
+
+        connectedUsers[socket.id] = {
+          socketId: socket.id,
+          username: user.username,
+          role: user.role,
+          avatar: user.avatar || null,
+          accountKey: key,
+          currentRoom: null,
+          currentTextRoom: 'general'
+        };
+
+        socket.emit('login-success', {
+          username: user.username,
+          role: user.role,
+          accountKey: user.accountKey,
+          avatar: user.avatar,
+          twoFactorEnabled: !!user.twoFactorEnabled,
+          hasPassword: !!user.passwordHash,
+          hasPasskeys: true
+        });
+        await sendPrivateHistory(socket, user.username);
+        socket.join('text-general');
+        broadcastUsersState();
+      } else {
+        socket.emit('login-error', 'Passkey-Verifikation fehlgeschlagen.');
+      }
+    } catch (err) {
+      console.error(err);
+      socket.emit('login-error', 'Fehler beim Abschließen des Passkey-Logins: ' + err.message);
+    }
+  });
+
+  socket.on('delete-own-account', async () => {
+    const key = socket.data.accountKey;
+    if (!key) return;
+    try {
+      await db.deleteUser(key);
+      socket.emit('account-deleted');
+      console.log(`Account gelöscht: ${socket.data.username} (${key})`);
+    } catch (err) {
+      console.error(err);
+      socket.emit('error-msg', 'Fehler beim Löschen des Accounts.');
     }
   });
 
@@ -865,11 +1186,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('create-document', async ({ title }) => {
+  socket.on('create-document', async ({ title, type, externalUrl }) => {
     const cleanTitle = title.trim() || 'Unbenanntes Dokument';
     const docId = Math.random().toString(36).substr(2, 9);
     try {
-      await db.saveDocument(docId, cleanTitle, null);
+      await db.saveDocument(docId, cleanTitle, null, type || 'text', externalUrl || null);
       const list = await db.getAllDocuments();
       io.emit('documents-list', list);
     } catch (err) {
@@ -1071,6 +1392,18 @@ const startServer = async () => {
     console.log(`${Object.keys(rolesCache).length} Rollen erfolgreich in den Cache geladen.`);
   } catch (err) {
     console.error("Fehler beim Laden der Rollen in den Cache:", err);
+  }
+
+  // Demo-Bereinigungs-Intervall (alle 1 Minute)
+  if (process.env.ALLOW_DEMO_ROLES === 'true') {
+    setInterval(async () => {
+      try {
+        await db.deleteOldDemoAccounts();
+      } catch (err) {
+        console.error("Fehler bei der Demo-Bereinigung:", err);
+      }
+    }, 60000);
+    console.log("Demo-Bereinigungs-Intervall (10 Min. Lebensdauer) gestartet.");
   }
 
   const PORT = process.env.PORT || 3001;

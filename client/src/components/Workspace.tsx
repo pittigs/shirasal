@@ -12,6 +12,8 @@ Quill.register('modules/cursors', QuillCursors);
 interface DocumentInfo {
   id: string;
   title: string;
+  type?: 'text' | 'google_doc';
+  externalUrl?: string;
   lastModified: string;
 }
 
@@ -42,6 +44,10 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
   const [activeDocTitle, setActiveDocTitle] = useState<string>('');
+  const [activeDocType, setActiveDocType] = useState<'text' | 'google_doc'>('text');
+  const [activeDocUrl, setActiveDocUrl] = useState<string>('');
+  const [docType, setDocType] = useState<'text' | 'google_doc'>('text');
+  const [externalUrl, setExternalUrl] = useState('');
   const [newDocTitle, setNewDocTitle] = useState('');
   const [attachments, setAttachments] = useState<AttachmentInfo[]>([]);
   const [previewAttachment, setPreviewAttachment] = useState<AttachmentInfo | null>(null);
@@ -77,12 +83,19 @@ export const Workspace: React.FC<WorkspaceProps> = ({
     // Clean up previous bindings
     cleanupEditor();
 
+    if (activeDocType === 'google_doc') {
+      return;
+    }
+
     // Fetch attachments
     socket.emit('get-attachments', { docId: activeDocId });
     socket.emit('join-document', { docId: activeDocId });
 
     const handleDocumentInit = (payload: { docId: string; update: ArrayBuffer | Uint8Array }) => {
       if (payload.docId !== activeDocId || !editorContainerRef.current) return;
+
+      // Vorherige Instanzen säubern, um Doppel-Initialisierungen zu vermeiden
+      cleanupEditor();
 
       const ydoc = new Y.Doc();
       ydocRef.current = ydoc;
@@ -184,7 +197,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
       socket.off('yjs-awareness-request', handleAwarenessRequest);
       socket.off('attachments-list', handleAttachmentsList);
     };
-  }, [socket, activeDocId]);
+  }, [socket, activeDocId, activeDocType]);
 
   const cleanupEditor = () => {
     if (bindingRef.current) {
@@ -204,14 +217,26 @@ export const Workspace: React.FC<WorkspaceProps> = ({
     }
     if (editorContainerRef.current) {
       editorContainerRef.current.innerHTML = '';
+      // Entferne Quill-Toolbar (Geschwister-Element im DOM)
+      const parent = editorContainerRef.current.parentNode;
+      if (parent) {
+        const toolbars = parent.querySelectorAll('.ql-toolbar');
+        toolbars.forEach(tb => tb.remove());
+      }
     }
   };
 
   const handleCreateDocument = (e: React.FormEvent) => {
     e.preventDefault();
     if (newDocTitle.trim()) {
-      socket.emit('create-document', { title: newDocTitle.trim() });
+      socket.emit('create-document', { 
+        title: newDocTitle.trim(),
+        type: docType,
+        externalUrl: docType === 'google_doc' ? externalUrl.trim() : null
+      });
       setNewDocTitle('');
+      setExternalUrl('');
+      setDocType('text');
       setShowCreateForm(false);
     }
   };
@@ -227,6 +252,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({
       if (activeDocId === docId) {
         setActiveDocId(null);
         setActiveDocTitle('');
+        setActiveDocType('text');
+        setActiveDocUrl('');
         setAttachments([]);
       }
     }
@@ -253,6 +280,63 @@ export const Workspace: React.FC<WorkspaceProps> = ({
     if (confirm('Anhang wirklich löschen?')) {
       socket.emit('delete-attachment', { docId: activeDocId, attachmentId });
     }
+  };
+
+  const handleWordImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !quillRef.current) return;
+
+    if (!file.name.toLowerCase().endsWith('.docx')) {
+      alert("Es sind nur .docx-Dateien erlaubt.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const arrayBuffer = event.target?.result as ArrayBuffer;
+      try {
+        const mammoth = (window as any).mammoth;
+        if (!mammoth) {
+          alert("Mammoth.js wird noch geladen. Bitte warte einen Moment und versuche es erneut.");
+          return;
+        }
+        const result = await mammoth.convertToHtml({ arrayBuffer });
+        const quill = quillRef.current;
+        if (quill) {
+          quill.clipboard.dangerouslyPasteHTML(0, result.value);
+        }
+      } catch (err) {
+        console.error("Fehler beim Parsen der Word-Datei:", err);
+        alert("Fehler beim Importieren der Word-Datei. Bitte stelle sicher, dass es sich um eine gültige .docx-Datei handelt.");
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleWordExport = () => {
+    if (!quillRef.current) return;
+    const htmlContent = quillRef.current.root.innerHTML;
+    
+    const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' " +
+          "xmlns:w='urn:schemas-microsoft-com:office:word' " +
+          "xmlns='http://www.w3.org/TR/REC-html40'>" +
+          "<head><title>" + activeDocTitle + "</title><style>" +
+          "body { font-family: Arial, sans-serif; }" +
+          "</style></head><body>";
+    const footer = "</body></html>";
+    const sourceHTML = header + htmlContent + footer;
+    
+    const dataType = 'application/msword';
+    const blob = new Blob(['\ufeff' + sourceHTML], { type: dataType });
+    
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeDocTitle || 'Dokument'}.doc`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -288,10 +372,19 @@ export const Workspace: React.FC<WorkspaceProps> = ({
         </div>
 
         {showCreateForm && (
-          <form onSubmit={handleCreateDocument} style={{ display: 'flex', gap: '6px' }}>
+          <form onSubmit={handleCreateDocument} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <select
+              value={docType}
+              onChange={(e) => setDocType(e.target.value as 'text' | 'google_doc')}
+              className="input-field"
+              style={{ fontSize: '0.8rem', padding: '6px', background: 'rgba(0,0,0,0.3)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px' }}
+            >
+              <option value="text">📄 Text-Dokument / Word-Import</option>
+              <option value="google_doc">🌐 Google Doc verknüpfen</option>
+            </select>
             <input 
               type="text" 
-              placeholder={t('workspace.new_doc_placeholder')}
+              placeholder={docType === 'text' ? t('workspace.new_doc_placeholder') : "Google Doc Name"}
               value={newDocTitle}
               onChange={(e) => setNewDocTitle(e.target.value)}
               className="input-field"
@@ -299,7 +392,20 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               required
               autoFocus
             />
-            <button type="submit" className="btn-primary" style={{ padding: '6px 10px', fontSize: '0.8rem', width: 'auto' }}>✓</button>
+            {docType === 'google_doc' && (
+              <input 
+                type="url" 
+                placeholder="Google Doc URL (https://docs.google.com/...)"
+                value={externalUrl}
+                onChange={(e) => setExternalUrl(e.target.value)}
+                className="input-field"
+                style={{ fontSize: '0.8rem', padding: '6px 10px' }}
+                required
+              />
+            )}
+            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+              <button type="submit" className="btn-primary" style={{ padding: '6px 12px', fontSize: '0.8rem', width: 'auto' }}>✓ Erstellen</button>
+            </div>
           </form>
         )}
 
@@ -315,6 +421,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                 onClick={() => {
                   setActiveDocId(doc.id);
                   setActiveDocTitle(doc.title);
+                  setActiveDocType(doc.type || 'text');
+                  setActiveDocUrl(doc.externalUrl || '');
                 }}
                 className={`glass-panel ${activeDocId === doc.id ? 'active' : ''}`}
                 style={{
@@ -331,7 +439,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
                   <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#fff', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                    📄 {doc.title}
+                    {doc.type === 'google_doc' ? '🌐' : '📄'} {doc.title}
                   </span>
                   <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
                     {new Date(doc.lastModified).toLocaleDateString()}
@@ -377,9 +485,20 @@ export const Workspace: React.FC<WorkspaceProps> = ({
             {/* Title & Actions */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 style={{ fontSize: '1.3rem', fontWeight: 800, margin: 0, color: '#fff' }}>
-                📄 {activeDocTitle}
+                {activeDocType === 'google_doc' ? '🌐' : '📄'} {activeDocTitle}
               </h2>
-              <div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {activeDocType === 'text' && (
+                  <>
+                    <label className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem', cursor: 'pointer', display: 'inline-block' }} title="Lade eine .docx Datei in diesen Editor">
+                      Word importieren (.docx) 📥
+                      <input type="file" accept=".docx" onChange={handleWordImport} style={{ display: 'none' }} />
+                    </label>
+                    <button onClick={handleWordExport} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} title="Diesen Text als Word-Datei (.doc) herunterladen">
+                      Word exportieren (.doc) 📤
+                    </button>
+                  </>
+                )}
                 <label className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem', cursor: 'pointer', display: 'inline-block' }}>
                   {t('workspace.upload_btn')}
                   <input type="file" onChange={handleFileUpload} style={{ display: 'none' }} />
@@ -387,21 +506,40 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               </div>
             </div>
 
-            {/* Quill editor container */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <div 
-                ref={editorContainerRef} 
-                className="glass-panel" 
-                style={{ 
-                  flex: 1, 
-                  background: 'rgba(0,0,0,0.15)', 
-                  borderColor: 'rgba(255,255,255,0.06)',
-                  color: '#fff',
-                  borderRadius: '8px',
-                  overflowY: 'auto'
-                }}
-              />
-            </div>
+            {/* Editor or Iframe Container */}
+            {activeDocType === 'google_doc' ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <iframe
+                  src={activeDocUrl}
+                  title={activeDocTitle}
+                  style={{
+                    flex: 1,
+                    width: '100%',
+                    height: '100%',
+                    border: 'none',
+                    borderRadius: '8px',
+                    background: '#fff'
+                  }}
+                  allow="autoplay; encrypted-media"
+                />
+              </div>
+            ) : (
+              /* Quill editor container */
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div 
+                  ref={editorContainerRef} 
+                  className="glass-panel" 
+                  style={{ 
+                    flex: 1, 
+                    background: 'rgba(0,0,0,0.15)', 
+                    borderColor: 'rgba(255,255,255,0.06)',
+                    color: '#fff',
+                    borderRadius: '8px',
+                    overflowY: 'auto'
+                  }}
+                />
+              </div>
+            )}
 
             {/* Attachments Section */}
             {attachments.length > 0 && (

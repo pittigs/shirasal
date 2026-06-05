@@ -89,7 +89,20 @@ export const App: React.FC = () => {
     clearSearchResults,
     serverUrl,
     changeServerUrl,
-    socket
+    socket,
+    twoFactorEnabled,
+    hasPassword,
+    hasPasskeys,
+    temp2faSecret,
+    setTemp2faSecret,
+    is2faRequired,
+    setPassword,
+    setup2FAStart,
+    verify2FA,
+    disable2FA,
+    registerPasskey,
+    loginWithPasskey,
+    deleteOwnAccount
   } = useWebRTC();
 
   const [layout, setLayout] = useState({ chatVisible: true, chatPosition: 'right' as 'left' | 'right' });
@@ -128,6 +141,12 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'register' | 'login' | 'ldap'>('register');
   const [chosenRole, setChosenRole] = useState('guest'); // guest, member, admin
   const [inputKey, setInputKey] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginToken, setLoginToken] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [securityModalOpen, setSecurityModalOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [totpVerifyCode, setTotpVerifyCode] = useState('');
   const [serverUrlInput, setServerUrlInput] = useState(serverUrl);
   const [ldapUsername, setLdapUsername] = useState('');
   const [ldapPassword, setLdapPassword] = useState('');
@@ -201,14 +220,14 @@ export const App: React.FC = () => {
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    createAccount(chosenRole);
+    createAccount(chosenRole, registerPassword);
     setShowKeyReveal(true);
   };
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (inputKey.trim()) {
-      loginWithKey(inputKey.trim());
+      loginWithKey(inputKey.trim(), loginPassword, loginToken);
     }
   };
 
@@ -306,7 +325,14 @@ export const App: React.FC = () => {
                   alignItems: 'center'
                 }}
               >
-                <span>{accountKey}</span>
+                <span 
+                  style={{ filter: 'blur(4px)', transition: 'filter 0.2s', cursor: 'pointer' }}
+                  onMouseEnter={(e) => e.currentTarget.style.filter = 'none'}
+                  onMouseLeave={(e) => e.currentTarget.style.filter = 'blur(4px)'}
+                  title="Hover zum Anzeigen"
+                >
+                  {accountKey}
+                </span>
                 <button
                   onClick={handleCopyKey}
                   style={{
@@ -503,6 +529,19 @@ export const App: React.FC = () => {
                 </div>
               )}
 
+              <div style={{ textAlign: 'left' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px', fontWeight: 600 }}>
+                  Passwort (optional, zur zusätzlichen Absicherung)
+                </label>
+                <input
+                  type="password"
+                  placeholder="Passwort eingeben"
+                  value={registerPassword}
+                  onChange={(e) => setRegisterPassword(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+
               <button type="submit" className="btn-primary" style={{ marginTop: allowDemoRoles ? '8px' : '0px' }}>
                 {t('login.register_btn')}
               </button>
@@ -524,9 +563,53 @@ export const App: React.FC = () => {
                 />
               </div>
 
-              <button type="submit" className="btn-primary" style={{ marginTop: '8px' }}>
-                {t('login.login_btn')}
-              </button>
+              <div style={{ textAlign: 'left' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px', fontWeight: 600 }}>
+                  Passwort (nur falls eingerichtet)
+                </label>
+                <input
+                  type="password"
+                  placeholder="Passwort eingeben"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+
+              {is2faRequired && (
+                <div style={{ textAlign: 'left' }} className="fade-in">
+                  <label style={{ fontSize: '0.85rem', color: '#f43f5e', display: 'block', marginBottom: '6px', fontWeight: 600 }}>
+                    ⚠️ 2FA Authentifizierungscode benötigt
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    placeholder="6-stelligen Code eingeben"
+                    value={loginToken}
+                    onChange={(e) => setLoginToken(e.target.value)}
+                    className="input-field"
+                    style={{ textAlign: 'center', fontSize: '1.2rem', letterSpacing: '4px' }}
+                    required
+                  />
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                <button type="submit" className="btn-primary" style={{ flex: 1 }}>
+                  {t('login.login_btn')}
+                </button>
+                {inputKey.trim().length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => loginWithPasskey(inputKey)}
+                    className="btn-secondary"
+                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                    title="Mit hinterlegtem Passkey (Fingerabdruck / Windows Hello) einloggen"
+                  >
+                    🔑 Passkey Login
+                  </button>
+                )}
+              </div>
             </form>
           ) : (
             <form onSubmit={handleLdapSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -867,7 +950,14 @@ export const App: React.FC = () => {
                     </div>
                   )}
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block' }}>
-                    Key: <span style={{ fontFamily: 'var(--font-mono)' }}>{accountKey}</span>
+                    Key: <span 
+                      style={{ filter: 'blur(4px)', transition: 'filter 0.2s', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}
+                      onMouseEnter={(e) => e.currentTarget.style.filter = 'none'}
+                      onMouseLeave={(e) => e.currentTarget.style.filter = 'blur(4px)'}
+                      title="Hover zum Anzeigen"
+                    >
+                      {accountKey}
+                    </span>
                   </span>
                 </div>
               </div>
@@ -878,6 +968,120 @@ export const App: React.FC = () => {
               >
                 {t('common.logout')}
               </button>
+            </div>
+
+            <hr style={{ borderColor: 'rgba(255,255,255,0.06)' }} />
+            
+            {/* Account Security Settings Section */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fff' }}>🛡️ Kontosicherheit</span>
+                <button 
+                  onClick={() => setSecurityModalOpen(!securityModalOpen)} 
+                  className="btn-secondary"
+                  style={{ padding: '2px 8px', fontSize: '0.7rem', width: 'auto' }}
+                >
+                  {securityModalOpen ? 'Schließen' : 'Verwalten'}
+                </button>
+              </div>
+
+              {securityModalOpen && (
+                <div className="glass-panel fade-in" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(0,0,0,0.2)' }}>
+                  
+                  {/* Password Setup */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      {hasPassword ? 'Passwort ändern / entfernen:' : 'Passwort einrichten:'}
+                    </span>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        type="password"
+                        placeholder={hasPassword ? "Neues PW (leer = entfernen)" : "Passwort eingeben"}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="input-field"
+                        style={{ padding: '4px 8px', fontSize: '0.75rem', flex: 1 }}
+                      />
+                      <button
+                        onClick={() => {
+                          setPassword(newPassword);
+                          setNewPassword('');
+                        }}
+                        className="btn-primary"
+                        style={{ padding: '4px 10px', fontSize: '0.75rem', width: 'auto' }}
+                      >
+                        Speichern
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 2FA Setup */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '6px' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Zwei-Faktor-Authentifizierung (2FA):</span>
+                    {twoFactorEnabled ? (
+                      <button onClick={disable2FA} className="btn-secondary" style={{ padding: '6px', fontSize: '0.75rem', color: '#f43f5e', borderColor: '#f43f5e' }}>
+                        2FA deaktivieren ❌
+                      </button>
+                    ) : temp2faSecret ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ fontSize: '0.7rem', color: '#fff', background: 'rgba(0,0,0,0.3)', padding: '6px', borderRadius: '4px', textAlign: 'center', wordBreak: 'break-all' }}>
+                          Secret Key: <strong style={{ color: 'var(--accent-color)', fontFamily: 'var(--font-mono)' }}>{temp2faSecret}</strong>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '2px' }}>Scanne diesen Key in deiner Authenticator-App</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <input
+                            type="text"
+                            placeholder="6-stelliger Code"
+                            value={totpVerifyCode}
+                            onChange={(e) => setTotpVerifyCode(e.target.value)}
+                            className="input-field"
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', flex: 1, textAlign: 'center' }}
+                          />
+                          <button
+                            onClick={() => {
+                              verify2FA(totpVerifyCode);
+                              setTotpVerifyCode('');
+                            }}
+                            className="btn-primary"
+                            style={{ padding: '4px 10px', fontSize: '0.75rem', width: 'auto' }}
+                          >
+                            Aktivieren
+                          </button>
+                        </div>
+                        <button onClick={() => setTemp2faSecret(null)} className="btn-secondary" style={{ padding: '4px', fontSize: '0.75rem' }}>Abbrechen</button>
+                      </div>
+                    ) : (
+                      <button onClick={setup2FAStart} className="btn-secondary" style={{ padding: '6px', fontSize: '0.75rem' }}>
+                        🔑 2FA einrichten
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Passkey Setup */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '6px' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Passkey (Windows Hello / TouchID):</span>
+                    <button onClick={registerPasskey} className="btn-secondary" style={{ padding: '6px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                      🔑 {hasPasskeys ? 'Weiteren Passkey registrieren' : 'Passkey registrieren'}
+                    </button>
+                  </div>
+
+                  {/* Self-Deletion */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '6px' }}>
+                    <button 
+                      onClick={() => {
+                        if (confirm("Möchtest du deinen Account wirklich unwiderruflich LÖSCHEN? Alle deine privaten Nachrichten, Avatare und Einstellungen werden vollständig entfernt. Diese Aktion kann nicht rückgängig gemacht werden!")) {
+                          deleteOwnAccount();
+                        }
+                      }} 
+                      className="btn-secondary" 
+                      style={{ padding: '6px', fontSize: '0.75rem', color: '#ef4444', borderColor: '#ef4444', background: 'rgba(239,68,68,0.05)' }}
+                    >
+                      🗑️ Account löschen
+                    </button>
+                  </div>
+
+                </div>
+              )}
             </div>
 
             <hr style={{ borderColor: 'rgba(255,255,255,0.06)' }} />

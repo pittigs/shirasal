@@ -54,15 +54,50 @@ export const init = async () => {
       table.string('username', 100).unique().notNullable();
       table.string('role', 50).defaultTo('guest');
       table.text('avatar', 'longtext').nullable();
+      table.string('passwordHash', 255).nullable();
+      table.string('twoFactorSecret', 100).nullable();
+      table.boolean('twoFactorEnabled').defaultTo(false);
+      table.text('passkeyCredentials', 'longtext').nullable();
+      table.timestamp('createdAt').defaultTo(knex.fn.now());
     });
     console.log('Tabelle "users" erstellt.');
   } else {
-    // Spalte 'avatar' nachträglich hinzufügen, falls sie fehlt
+    // Spalten nachträglich hinzufügen, falls sie fehlen
     if (!(await knex.schema.hasColumn('users', 'avatar'))) {
       await knex.schema.alterTable('users', (table) => {
         table.text('avatar', 'longtext').nullable();
       });
       console.log('Spalte "avatar" zur Tabelle "users" hinzugefügt.');
+    }
+    if (!(await knex.schema.hasColumn('users', 'passwordHash'))) {
+      await knex.schema.alterTable('users', (table) => {
+        table.string('passwordHash', 255).nullable();
+      });
+      console.log('Spalte "passwordHash" zur Tabelle "users" hinzugefügt.');
+    }
+    if (!(await knex.schema.hasColumn('users', 'twoFactorSecret'))) {
+      await knex.schema.alterTable('users', (table) => {
+        table.string('twoFactorSecret', 100).nullable();
+      });
+      console.log('Spalte "twoFactorSecret" zur Tabelle "users" hinzugefügt.');
+    }
+    if (!(await knex.schema.hasColumn('users', 'twoFactorEnabled'))) {
+      await knex.schema.alterTable('users', (table) => {
+        table.boolean('twoFactorEnabled').defaultTo(false);
+      });
+      console.log('Spalte "twoFactorEnabled" zur Tabelle "users" hinzugefügt.');
+    }
+    if (!(await knex.schema.hasColumn('users', 'passkeyCredentials'))) {
+      await knex.schema.alterTable('users', (table) => {
+        table.text('passkeyCredentials', 'longtext').nullable();
+      });
+      console.log('Spalte "passkeyCredentials" zur Tabelle "users" hinzugefügt.');
+    }
+    if (!(await knex.schema.hasColumn('users', 'createdAt'))) {
+      await knex.schema.alterTable('users', (table) => {
+        table.timestamp('createdAt').defaultTo(knex.fn.now());
+      });
+      console.log('Spalte "createdAt" zur Tabelle "users" hinzugefügt.');
     }
   }
 
@@ -117,9 +152,25 @@ export const init = async () => {
       table.string('id', 50).primary();
       table.string('title', 255).notNullable();
       table.binary('content').nullable();
+      table.string('type', 50).defaultTo('text');
+      table.text('externalUrl').nullable();
       table.timestamp('lastModified').defaultTo(knex.fn.now());
     });
     console.log('Tabelle "documents" erstellt.');
+  } else {
+    // Spalten nachträglich hinzufügen, falls sie fehlen
+    if (!(await knex.schema.hasColumn('documents', 'type'))) {
+      await knex.schema.alterTable('documents', (table) => {
+        table.string('type', 50).defaultTo('text');
+      });
+      console.log('Spalte "type" zur Tabelle "documents" hinzugefügt.');
+    }
+    if (!(await knex.schema.hasColumn('documents', 'externalUrl'))) {
+      await knex.schema.alterTable('documents', (table) => {
+        table.text('externalUrl').nullable();
+      });
+      console.log('Spalte "externalUrl" zur Tabelle "documents" hinzugefügt.');
+    }
   }
 
   // Create document attachments table
@@ -135,14 +186,59 @@ export const init = async () => {
   }
 };
 
-export const saveUser = async (accountKey, username, role, avatar) => {
+export const saveUser = async (accountKey, username, role, avatar, passwordHash, twoFactorSecret, twoFactorEnabled, passkeyCredentials) => {
   const existing = await knex('users').where({ accountKey }).first();
+  const data = {};
+  if (username !== undefined) data.username = username;
+  if (role !== undefined) data.role = role;
+  if (avatar !== undefined) data.avatar = avatar;
+  if (passwordHash !== undefined) data.passwordHash = passwordHash;
+  if (twoFactorSecret !== undefined) data.twoFactorSecret = twoFactorSecret;
+  if (twoFactorEnabled !== undefined) data.twoFactorEnabled = twoFactorEnabled;
+  if (passkeyCredentials !== undefined) data.passkeyCredentials = passkeyCredentials;
+
   if (existing) {
-    const updates = { username, role };
-    if (avatar !== undefined) updates.avatar = avatar;
-    await knex('users').where({ accountKey }).update(updates);
+    await knex('users').where({ accountKey }).update(data);
   } else {
-    await knex('users').insert({ accountKey, username, role, avatar: avatar || null });
+    await knex('users').insert({
+      accountKey,
+      username: username || '',
+      role: role || 'guest',
+      avatar: avatar || null,
+      passwordHash: passwordHash || null,
+      twoFactorSecret: twoFactorSecret || null,
+      twoFactorEnabled: twoFactorEnabled || false,
+      passkeyCredentials: passkeyCredentials || null,
+      createdAt: knex.fn.now()
+    });
+  }
+};
+
+export const deleteUser = async (accountKey) => {
+  const user = await knex('users').where({ accountKey }).first();
+  if (user) {
+    await knex('private_messages')
+      .where({ senderUsername: user.username })
+      .orWhere({ receiverUsername: user.username })
+      .delete();
+    await knex('private_message_reactions')
+      .where({ username: user.username })
+      .delete();
+    await knex('users').where({ accountKey }).delete();
+    return true;
+  }
+  return false;
+};
+
+export const deleteOldDemoAccounts = async () => {
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+  const oldUsers = await knex('users')
+    .where('createdAt', '<', tenMinutesAgo)
+    .andWhereNot('username', 'System');
+    
+  for (const user of oldUsers) {
+    console.log(`Demo-Bereinigung: Lösche inaktiven Account ${user.username} (${user.accountKey})`);
+    await deleteUser(user.accountKey);
   }
 };
 
@@ -300,7 +396,7 @@ export const searchPrivateMessages = async (username, partnerUsername, query) =>
   }));
 };
 
-export const saveDocument = async (id, title, content) => {
+export const saveDocument = async (id, title, content, type, externalUrl) => {
   const existing = await knex('documents').where({ id }).first();
   const data = {
     title,
@@ -308,6 +404,12 @@ export const saveDocument = async (id, title, content) => {
   };
   if (content !== undefined) {
     data.content = content;
+  }
+  if (type !== undefined) {
+    data.type = type;
+  }
+  if (externalUrl !== undefined) {
+    data.externalUrl = externalUrl;
   }
   if (existing) {
     await knex('documents').where({ id }).update(data);
@@ -321,7 +423,7 @@ export const getDocument = async (id) => {
 };
 
 export const getAllDocuments = async () => {
-  return knex('documents').select('id', 'title', 'lastModified').orderBy('lastModified', 'desc');
+  return knex('documents').select('id', 'title', 'type', 'externalUrl', 'lastModified').orderBy('lastModified', 'desc');
 };
 
 export const deleteDocument = async (id) => {

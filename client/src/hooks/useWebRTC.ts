@@ -74,6 +74,11 @@ export const useWebRTC = () => {
   const [role, setRole] = useState('guest');
   const [avatar, setAvatar] = useState<string | null>(null);
   const [accountKey, setAccountKey] = useState<string | null>(null);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [hasPassword, setHasPassword] = useState(false);
+  const [hasPasskeys, setHasPasskeys] = useState(false);
+  const [temp2faSecret, setTemp2faSecret] = useState<string | null>(null);
+  const [is2faRequired, setIs2faRequired] = useState(false);
   const serverUrl = SOCKET_URL;
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [allowDemoRoles, setAllowDemoRoles] = useState(false);
@@ -373,22 +378,30 @@ export const useWebRTC = () => {
     });
 
     // --- Account Listeners ---
-    socket.on('account-created', ({ username: u, role: r, accountKey: k, avatar: av }) => {
+    socket.on('account-created', ({ username: u, role: r, accountKey: k, avatar: av, twoFactorEnabled: tfa, hasPassword: hp, hasPasskeys: hk }) => {
       setUsername(u);
       setRole(r);
       setAccountKey(k);
       setAvatar(av || null);
+      setTwoFactorEnabled(tfa);
+      setHasPassword(hp);
+      setHasPasskeys(hk);
+      setIs2faRequired(false);
       setIsLoggedIn(true);
       localStorage.setItem('voicechat-account-key', k);
       
       socket.emit('join-text-channel', { channelId: 'general' });
     });
 
-    socket.on('login-success', ({ username: u, role: r, accountKey: k, avatar: av }) => {
+    socket.on('login-success', ({ username: u, role: r, accountKey: k, avatar: av, twoFactorEnabled: tfa, hasPassword: hp, hasPasskeys: hk }) => {
       setUsername(u);
       setRole(r);
       setAccountKey(k);
       setAvatar(av || null);
+      setTwoFactorEnabled(tfa);
+      setHasPassword(hp);
+      setHasPasskeys(hk);
+      setIs2faRequired(false);
       setIsLoggedIn(true);
       localStorage.setItem('voicechat-account-key', k);
 
@@ -398,6 +411,70 @@ export const useWebRTC = () => {
     socket.on('login-error', (msg: string) => {
       alert(`Login fehlgeschlagen: ${msg}`);
       localStorage.removeItem('voicechat-account-key');
+    });
+
+    socket.on('login-2fa-required', () => {
+      setIs2faRequired(true);
+    });
+
+    socket.on('password-updated', ({ hasPassword }) => {
+      setHasPassword(hasPassword);
+      alert(hasPassword ? "Passwort erfolgreich eingerichtet/geändert!" : "Passwort entfernt.");
+    });
+
+    socket.on('setup-2fa-secret', ({ secret }) => {
+      setTemp2faSecret(secret);
+    });
+
+    socket.on('2fa-setup-success', () => {
+      setTwoFactorEnabled(true);
+      setTemp2faSecret(null);
+      alert("Zwei-Faktor-Authentifizierung (2FA) erfolgreich aktiviert!");
+    });
+
+    socket.on('2fa-disabled-success', () => {
+      setTwoFactorEnabled(false);
+      alert("Zwei-Faktor-Authentifizierung (2FA) deaktiviert.");
+    });
+
+    socket.on('register-passkey-options', async (options) => {
+      try {
+        const { startRegistration } = await import('@simplewebauthn/browser');
+        const cred = await startRegistration({ optionsJSON: options });
+        socket.emit('register-passkey-finish', {
+          credential: cred,
+          hostname: window.location.hostname,
+          origin: window.location.origin
+        });
+      } catch (err: any) {
+        console.error(err);
+        alert('Passkey-Registrierung fehlgeschlagen: ' + err.message);
+      }
+    });
+
+    socket.on('register-passkey-success', () => {
+      setHasPasskeys(true);
+      alert("Passkey erfolgreich registriert und verknüpft!");
+    });
+
+    socket.on('login-passkey-options', async (options) => {
+      try {
+        const { startAuthentication } = await import('@simplewebauthn/browser');
+        const cred = await startAuthentication({ optionsJSON: options });
+        socket.emit('login-passkey-finish', {
+          credential: cred,
+          hostname: window.location.hostname,
+          origin: window.location.origin
+        });
+      } catch (err: any) {
+        console.error(err);
+        alert('Passkey-Anmeldung fehlgeschlagen: ' + err.message);
+      }
+    });
+
+    socket.on('account-deleted', () => {
+      logout();
+      alert("Dein Account wurde dauerhaft und erfolgreich gelöscht.");
     });
 
     // --- Roles and Reactions Listeners ---
@@ -901,15 +978,15 @@ export const useWebRTC = () => {
 
   // --- ACCOUNT ACTIONS ---
 
-  const createAccount = (chosenRole: string) => {
+  const createAccount = (chosenRole: string, password?: string) => {
     if (socketRef.current) {
-      socketRef.current.emit('create-account', { role: chosenRole });
+      socketRef.current.emit('create-account', { role: chosenRole, password });
     }
   };
 
-  const loginWithKey = (key: string) => {
+  const loginWithKey = (key: string, password?: string, token?: string) => {
     if (socketRef.current && key.trim()) {
-      socketRef.current.emit('login-account', { accountKey: key.trim() });
+      socketRef.current.emit('login-account', { accountKey: key.trim(), password, token });
     }
   };
 
@@ -926,9 +1003,56 @@ export const useWebRTC = () => {
     setRole('guest');
     setAccountKey(null);
     setAvatar(null);
+    setTwoFactorEnabled(false);
+    setHasPassword(false);
+    setHasPasskeys(false);
+    setTemp2faSecret(null);
+    setIs2faRequired(false);
     setIsLoggedIn(false);
     setAdminUsersList([]);
     setOnlineUsers([]);
+  };
+
+  const setPassword = (password: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit('set-password', { password });
+    }
+  };
+
+  const setup2FAStart = () => {
+    if (socketRef.current) {
+      socketRef.current.emit('setup-2fa-start');
+    }
+  };
+
+  const verify2FA = (token: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit('setup-2fa-verify', { token });
+    }
+  };
+
+  const disable2FA = () => {
+    if (socketRef.current) {
+      socketRef.current.emit('disable-2fa');
+    }
+  };
+
+  const registerPasskey = () => {
+    if (socketRef.current) {
+      socketRef.current.emit('register-passkey-start', { hostname: window.location.hostname });
+    }
+  };
+
+  const loginWithPasskey = (key: string) => {
+    if (socketRef.current && key.trim()) {
+      socketRef.current.emit('login-passkey-start', { accountKey: key.trim(), hostname: window.location.hostname });
+    }
+  };
+
+  const deleteOwnAccount = () => {
+    if (socketRef.current) {
+      socketRef.current.emit('delete-own-account');
+    }
   };
 
   // --- NICKNAME ACTIONS ---
@@ -1337,6 +1461,22 @@ export const useWebRTC = () => {
     hasPermission,
     serverUrl,
     changeServerUrl,
-    socket: socketRef.current
+    socket: socketRef.current,
+    
+    // Security states & functions
+    twoFactorEnabled,
+    hasPassword,
+    hasPasskeys,
+    temp2faSecret,
+    setTemp2faSecret,
+    is2faRequired,
+    setIs2faRequired,
+    setPassword,
+    setup2FAStart,
+    verify2FA,
+    disable2FA,
+    registerPasskey,
+    loginWithPasskey,
+    deleteOwnAccount
   };
 };
