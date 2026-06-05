@@ -400,7 +400,7 @@ io.on('connection', (socket) => {
     if (!key) return;
     try {
       const hash = password ? hashPassword(password) : null;
-      await db.saveUser(key, undefined, undefined, undefined, undefined, hash);
+      await db.saveUser(key, undefined, undefined, undefined, hash);
       socket.emit('password-updated', { hasPassword: !!hash });
     } catch (err) {
       console.error(err);
@@ -422,7 +422,7 @@ io.on('connection', (socket) => {
     if (!key || !secret) return;
 
     if (verifyTotp(secret, token)) {
-      await db.saveUser(key, undefined, undefined, undefined, undefined, undefined, secret, true);
+      await db.saveUser(key, undefined, undefined, undefined, undefined, secret, true);
       socket.data.temp2faSecret = null;
       socket.emit('2fa-setup-success');
     } else {
@@ -433,7 +433,7 @@ io.on('connection', (socket) => {
   socket.on('disable-2fa', async () => {
     const key = socket.data.accountKey;
     if (!key) return;
-    await db.saveUser(key, undefined, undefined, undefined, undefined, undefined, null, false);
+    await db.saveUser(key, undefined, undefined, undefined, undefined, null, false);
     socket.emit('2fa-disabled-success');
   });
 
@@ -496,7 +496,7 @@ io.on('connection', (socket) => {
           transports: credential.response.transports || []
         });
 
-        await db.saveUser(key, undefined, undefined, undefined, undefined, undefined, undefined, undefined, JSON.stringify(currentPasskeys));
+        await db.saveUser(key, undefined, undefined, undefined, undefined, undefined, undefined, JSON.stringify(currentPasskeys));
         socket.emit('register-passkey-success');
       } else {
         socket.emit('error-msg', 'Passkey-Registrierung fehlgeschlagen.');
@@ -561,7 +561,7 @@ io.on('connection', (socket) => {
 
       if (verification.verified) {
         passkey.counter = verification.authenticationInfo.newCounter;
-        await db.saveUser(key, undefined, undefined, undefined, undefined, undefined, undefined, undefined, JSON.stringify(passkeys));
+        await db.saveUser(key, undefined, undefined, undefined, undefined, undefined, undefined, JSON.stringify(passkeys));
 
         console.log(`Erfolgreicher Passkey-Login: ${user.username} (${user.role})`);
         
