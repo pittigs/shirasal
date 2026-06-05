@@ -486,14 +486,15 @@ io.on('connection', (socket) => {
 
       if (verification.verified) {
         const { registrationInfo } = verification;
-        const { credentialID, credentialPublicKey, counter } = registrationInfo;
+        const { credential } = registrationInfo;
+        const { id, publicKey, counter, transports } = credential;
         
         const currentPasskeys = user.passkeyCredentials ? JSON.parse(user.passkeyCredentials) : [];
         currentPasskeys.push({
-          credentialID: Buffer.from(credentialID).toString('base64url'),
-          credentialPublicKey: Buffer.from(credentialPublicKey).toString('base64url'),
+          credentialID: id,
+          credentialPublicKey: Buffer.from(publicKey).toString('base64url'),
           counter,
-          transports: credential.response.transports || []
+          transports: transports || credential.response?.transports || []
         });
 
         await db.saveUser(key, undefined, undefined, undefined, undefined, undefined, undefined, JSON.stringify(currentPasskeys));

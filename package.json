@@ -1,6 +1,6 @@
 {
   "name": "voice-chat-workspace",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Open-source Voice & Text Chat alternative using WebRTC (Opus) and customizable themes",
   "scripts": {
     "install:all": "npm install --prefix server && npm install --prefix client",
