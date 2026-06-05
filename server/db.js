@@ -233,12 +233,18 @@ export const deleteUser = async (accountKey) => {
 
 export const deleteOldDemoAccounts = async () => {
   const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+  const tenMinutesAgoStr = tenMinutesAgo.toISOString().replace('T', ' ').substring(0, 19);
+  
   const oldUsers = await knex('users')
-    .where('createdAt', '<', tenMinutesAgo)
+    .where('createdAt', '<', tenMinutesAgoStr)
     .andWhereNot('username', 'System');
     
+  if (oldUsers.length > 0) {
+    console.log(`[Demo-Bereinigung] Gefunden: ${oldUsers.length} inaktive Accounts älter als ${tenMinutesAgoStr}.`);
+  }
+    
   for (const user of oldUsers) {
-    console.log(`Demo-Bereinigung: Lösche inaktiven Account ${user.username} (${user.accountKey})`);
+    console.log(`Demo-Bereinigung: Lösche inaktiven Account ${user.username} (${user.accountKey}), erstellt: ${user.createdAt}`);
     await deleteUser(user.accountKey);
   }
 };
