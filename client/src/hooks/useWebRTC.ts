@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Room, RoomEvent, createLocalAudioTrack } from 'livekit-client';
-import { ExternalE2EEKeyProvider } from 'livekit-client/e2ee';
+import { Room, RoomEvent, ExternalE2EEKeyProvider, LocalAudioTrack } from 'livekit-client';
 
 import { RnnoiseWorkletNode, loadRnnoise } from '@sapphi-red/web-noise-suppressor';
 import rnnoiseWorkletPath from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
@@ -20,13 +19,6 @@ const getSocketUrl = (): string => {
 };
 
 const SOCKET_URL = getSocketUrl();
-
-const rtcConfig: RTCConfiguration = {
-  iceServers: [
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
-  ]
-};
 
 interface Participant {
   socketId: string;
@@ -64,11 +56,6 @@ interface Channel {
   name: string;
   minRole: string;
 }
-
-const optimizeOpus = (sdp: string): string => {
-  if (!sdp) return sdp;
-  return sdp.replace('useinbandfec=1', 'useinbandfec=1;maxaveragebitrate=256000;stereo=1;usedtx=0');
-};
 
 export const useWebRTC = () => {
   // Benutzeridentität
@@ -250,7 +237,6 @@ export const useWebRTC = () => {
   const destinationNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const screenAudioSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const localGainNodeRef = useRef<GainNode | null>(null);
-  const peerConnectionsRef = useRef<{ [socketId: string]: any }>({});
   const audioContextRef = useRef<AudioContext | null>(null);
   const localAnalyserRef = useRef<AnalyserNode | null>(null);
   const localSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -315,12 +301,12 @@ export const useWebRTC = () => {
       setRemoteStreams(streams);
     };
 
-    room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+    room.on(RoomEvent.TrackSubscribed, (_track, publication, participant) => {
       console.log(`Subscribed to track ${publication.trackSid} from ${participant.identity}`);
       updateParticipantsState();
     });
 
-    room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+    room.on(RoomEvent.TrackUnsubscribed, (_track, publication, participant) => {
       console.log(`Unsubscribed from track ${publication.trackSid} from ${participant.identity}`);
       updateParticipantsState();
     });
@@ -363,9 +349,6 @@ export const useWebRTC = () => {
         encryption: {
           keyProvider,
           worker: new Worker(new URL('livekit-client/e2ee-worker', import.meta.url), { type: 'module' })
-        },
-        publishDefaults: {
-          audioBitrate: 256000,
         }
       });
       livekitRoomRef.current = room;
@@ -378,8 +361,8 @@ export const useWebRTC = () => {
       if (streamToSend) {
         const audioTracks = streamToSend.getAudioTracks();
         if (audioTracks.length > 0) {
-          const localTrack = createLocalAudioTrack(audioTracks[0]);
-          await room.localParticipant.publishTrack(localTrack);
+          const localTrack = new LocalAudioTrack(audioTracks[0], undefined, true);
+          await room.localParticipant.publishTrack(localTrack, { audioBitrate: 256000 });
         }
       }
 
@@ -713,8 +696,8 @@ export const useWebRTC = () => {
           await room.localParticipant.unpublishTrack(pub.track!);
         }
         if (newTrack) {
-          const localTrack = createLocalAudioTrack(newTrack);
-          await room.localParticipant.publishTrack(localTrack);
+          const localTrack = new LocalAudioTrack(newTrack, undefined, true);
+          await room.localParticipant.publishTrack(localTrack, { audioBitrate: 256000 });
         }
       }
     } catch (err) {
@@ -1270,7 +1253,7 @@ export const useWebRTC = () => {
       const pubs = Array.from(livekitRoomRef.current.localParticipant.videoTrackPublications.values());
       for (const pub of pubs) {
         if (pub.source === 'camera' || pub.trackName === 'camera') {
-          await livekitRoomRef.current.unpublishTrack(pub.track!);
+          await livekitRoomRef.current.localParticipant.unpublishTrack(pub.track!);
         }
       }
     }
