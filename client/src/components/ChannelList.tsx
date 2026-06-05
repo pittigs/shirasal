@@ -42,6 +42,8 @@ interface ChannelListProps {
   unreadDMs: { [username: string]: boolean };
   onSelectPrivatePartner: (partner: string | null) => void;
   roles: RoleInfo[];
+  userVolumes: Record<string, number>;
+  onUserVolumeChange: (username: string, socketId: string, volume: number) => void;
 }
 
 const getRoleIcon = (role: string) => {
@@ -71,7 +73,9 @@ export const ChannelList: React.FC<ChannelListProps> = ({
   activePrivatePartner,
   unreadDMs,
   onSelectPrivatePartner,
-  roles = []
+  roles = [],
+  userVolumes = {},
+  onUserVolumeChange
 }) => {
   const { t } = useTranslation();
   // States für Sprachkanal-Erstellung
@@ -431,53 +435,93 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                     {/* Remote Users */}
                     {remoteParticipants.map((p) => {
                       const pAvatar = allUsers.find(u => u.username === p.username)?.avatar;
+                      const vol = userVolumes[p.username] !== undefined ? userVolumes[p.username] : 1.0;
                       return (
                         <div
                           key={p.socketId}
-                          style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelectPrivatePartner(p.username);
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                            background: 'rgba(255,255,255,0.03)',
+                            padding: '6px 8px',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(255,255,255,0.04)'
                           }}
-                          title={t('channels.dm_title', { name: p.username })}
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          {pAvatar ? (
-                            <img 
-                              src={pAvatar} 
-                              alt={p.username} 
-                              style={{ 
-                                width: '24px', 
-                                height: '24px', 
-                                borderRadius: '50%', 
-                                objectFit: 'cover',
-                                border: p.isSpeaking ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
-                                boxShadow: p.isSpeaking ? '0 0 8px #22c55e' : 'none',
-                                transition: 'all 0.15s ease'
-                              }} 
-                            />
-                          ) : (
-                            <div
+                          <div
+                            style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                            onClick={() => onSelectPrivatePartner(p.username)}
+                            title={t('channels.dm_title', { name: p.username })}
+                          >
+                            {pAvatar ? (
+                              <img 
+                                src={pAvatar} 
+                                alt={p.username} 
+                                style={{ 
+                                  width: '20px', 
+                                  height: '20px', 
+                                  borderRadius: '50%', 
+                                  objectFit: 'cover',
+                                  border: p.isSpeaking ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
+                                  boxShadow: p.isSpeaking ? '0 0 6px #22c55e' : 'none',
+                                  transition: 'all 0.15s ease'
+                                }} 
+                              />
+                            ) : (
+                              <div
+                                style={{
+                                  width: '20px',
+                                  height: '20px',
+                                  borderRadius: '50%',
+                                  background: 'rgba(255,255,255,0.1)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '0.75rem',
+                                  border: p.isSpeaking ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
+                                  boxShadow: p.isSpeaking ? '0 0 6px #22c55e' : 'none',
+                                  transition: 'all 0.15s ease',
+                                  color: getUsernameColor(p.username, p.role)
+                                }}
+                              >
+                                {getRoleIcon(p.role)}
+                              </div>
+                            )}
+                            <span style={{ fontSize: '0.8rem', color: getUsernameColor(p.username, p.role), flex: 1 }}>
+                              {p.username} 💬
+                            </span>
+                          </div>
+                          
+                          {/* Lautstärkeregler für diesen User */}
+                          <div 
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '28px' }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <span style={{ fontSize: '0.65rem', opacity: 0.5 }}>🔈</span>
+                            <input
+                              type="range"
+                              min="0"
+                              max="2"
+                              step="0.05"
+                              value={vol}
+                              onChange={(e) => onUserVolumeChange(p.username, p.socketId, parseFloat(e.target.value))}
+                              className="volume-slider"
                               style={{
-                                width: '24px',
-                                height: '24px',
-                                borderRadius: '50%',
-                                background: 'rgba(255,255,255,0.1)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '0.8rem',
-                                border: p.isSpeaking ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
-                                boxShadow: p.isSpeaking ? '0 0 8px #22c55e' : 'none',
-                                transition: 'all 0.15s ease',
-                                color: getUsernameColor(p.username, p.role)
+                                width: '65px',
+                                height: '3px',
+                                WebkitAppearance: 'none',
+                                background: 'rgba(255,255,255,0.15)',
+                                borderRadius: '2px',
+                                outline: 'none',
+                                cursor: 'pointer'
                               }}
-                            >
-                              {getRoleIcon(p.role)}
-                            </div>
-                          )}
-                          <span style={{ fontSize: '0.85rem', color: getUsernameColor(p.username, p.role) }}>
-                            {p.username} 💬
-                          </span>
+                            />
+                            <span style={{ fontSize: '0.6rem', opacity: 0.5, width: '24px', textAlign: 'right' }}>
+                              {Math.round(vol * 100)}%
+                            </span>
+                          </div>
                         </div>
                       );
                     })}

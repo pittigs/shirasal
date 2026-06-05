@@ -65,7 +65,7 @@ interface Channel {
 
 const optimizeOpus = (sdp: string): string => {
   if (!sdp) return sdp;
-  return sdp.replace('useinbandfec=1', 'useinbandfec=1;maxaveragebitrate=128000;stereo=1;usedtx=0');
+  return sdp.replace('useinbandfec=1', 'useinbandfec=1;maxaveragebitrate=256000;stereo=1;usedtx=0');
 };
 
 export const useWebRTC = () => {
@@ -211,13 +211,20 @@ export const useWebRTC = () => {
   const [echoCancellation, setEchoCancellation] = useState(true);
   const [autoGainControl, setAutoGainControl] = useState(true);
   const [keyboardFilter, setKeyboardFilter] = useState(true);
+  const [audioProfile, setAudioProfile] = useState<'flat' | 'studio' | 'clear'>(() => {
+    return (localStorage.getItem('voicechat-audio-profile') as 'flat' | 'studio' | 'clear') || 'flat';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('voicechat-audio-profile', audioProfile);
+  }, [audioProfile]);
 
   // Trigger Re-init of local stream if constraints change
   useEffect(() => {
     if (joinedRoomId) {
       initLocalStream(noiseSuppressionMode);
     }
-  }, [echoCancellation, autoGainControl, keyboardFilter, noiseSuppressionMode]);
+  }, [echoCancellation, autoGainControl, keyboardFilter, noiseSuppressionMode, audioProfile]);
 
   const usernameRef = useRef(username);
   useEffect(() => {
@@ -746,10 +753,94 @@ export const useWebRTC = () => {
 
       if (keyboardFilter) {
         currentNode.connect(hpf);
-        hpf.connect(gainNode);
-      } else {
-        currentNode.connect(gainNode);
+        currentNode = hpf;
       }
+
+      // Profile Nodes erstellen (Compressor / Equalizer)
+      let compressorNode = null;
+      let eqLowNode = null;
+      let eqHighNode = null;
+      let eqMidNode = null;
+
+      if (audioProfile === 'studio') {
+        try {
+          compressorNode = audioCtx.createDynamicsCompressor();
+          compressorNode.threshold.setValueAtTime(-20, audioCtx.currentTime);
+          compressorNode.knee.setValueAtTime(25, audioCtx.currentTime);
+          compressorNode.ratio.setValueAtTime(3.0, audioCtx.currentTime);
+          compressorNode.attack.setValueAtTime(0.005, audioCtx.currentTime);
+          compressorNode.release.setValueAtTime(0.15, audioCtx.currentTime);
+        } catch (compErr) {
+          console.error("Fehler beim Erstellen des DynamicsCompressors:", compErr);
+        }
+
+        try {
+          eqLowNode = audioCtx.createBiquadFilter();
+          eqLowNode.type = 'lowshelf';
+          eqLowNode.frequency.setValueAtTime(120, audioCtx.currentTime);
+          eqLowNode.gain.setValueAtTime(4.5, audioCtx.currentTime);
+        } catch (eqErr) {
+          console.error("Fehler beim Erstellen des Low-Shelf Filters:", eqErr);
+        }
+
+        try {
+          eqHighNode = audioCtx.createBiquadFilter();
+          eqHighNode.type = 'highshelf';
+          eqHighNode.frequency.setValueAtTime(6000, audioCtx.currentTime);
+          eqHighNode.gain.setValueAtTime(3.0, audioCtx.currentTime);
+        } catch (eqErr) {
+          console.error("Fehler beim Erstellen des High-Shelf Filters:", eqErr);
+        }
+      } else if (audioProfile === 'clear') {
+        try {
+          compressorNode = audioCtx.createDynamicsCompressor();
+          compressorNode.threshold.setValueAtTime(-18, audioCtx.currentTime);
+          compressorNode.knee.setValueAtTime(15, audioCtx.currentTime);
+          compressorNode.ratio.setValueAtTime(4.0, audioCtx.currentTime);
+          compressorNode.attack.setValueAtTime(0.003, audioCtx.currentTime);
+          compressorNode.release.setValueAtTime(0.1, audioCtx.currentTime);
+        } catch (compErr) {
+          console.error("Fehler beim Erstellen des DynamicsCompressors:", compErr);
+        }
+
+        try {
+          eqMidNode = audioCtx.createBiquadFilter();
+          eqMidNode.type = 'peaking';
+          eqMidNode.frequency.setValueAtTime(2200, audioCtx.currentTime);
+          eqMidNode.Q.setValueAtTime(1.0, audioCtx.currentTime);
+          eqMidNode.gain.setValueAtTime(3.5, audioCtx.currentTime);
+        } catch (eqErr) {
+          console.error("Fehler beim Erstellen des Peaking Filters:", eqErr);
+        }
+
+        try {
+          eqLowNode = audioCtx.createBiquadFilter();
+          eqLowNode.type = 'highpass';
+          eqLowNode.frequency.setValueAtTime(200, audioCtx.currentTime);
+        } catch (eqErr) {
+          console.error("Fehler beim Erstellen des Highpass Filters:", eqErr);
+        }
+      }
+
+      // Profile Nodes verbinden
+      if (compressorNode) {
+        currentNode.connect(compressorNode);
+        currentNode = compressorNode;
+      }
+      if (eqLowNode) {
+        currentNode.connect(eqLowNode);
+        currentNode = eqLowNode;
+      }
+      if (eqMidNode) {
+        currentNode.connect(eqMidNode);
+        currentNode = eqMidNode;
+      }
+      if (eqHighNode) {
+        currentNode.connect(eqHighNode);
+        currentNode = eqHighNode;
+      }
+
+      currentNode.connect(gainNode);
       gainNode.connect(destinationNode);
       
       processedStreamRef.current = destinationNode.stream;
@@ -1437,6 +1528,8 @@ export const useWebRTC = () => {
     setAutoGainControl,
     keyboardFilter,
     setKeyboardFilter,
+    audioProfile,
+    setAudioProfile,
     localScreenStream,
     startScreenShare,
     stopScreenShare,

@@ -64,6 +64,8 @@ export const App: React.FC = () => {
     setAutoGainControl,
     keyboardFilter,
     setKeyboardFilter,
+    audioProfile,
+    setAudioProfile,
     localScreenStream,
     startScreenShare,
     stopScreenShare,
@@ -104,6 +106,29 @@ export const App: React.FC = () => {
     loginWithPasskey,
     deleteOwnAccount
   } = useWebRTC();
+
+  const [userVolumes, setUserVolumes] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('voicechat-user-volumes');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const audioElementsRef = useRef<Record<string, HTMLAudioElement>>({});
+
+  const handleUserVolumeChange = (username: string, socketId: string, volume: number) => {
+    setUserVolumes(prev => {
+      const next = { ...prev, [username]: volume };
+      localStorage.setItem('voicechat-user-volumes', JSON.stringify(next));
+      return next;
+    });
+    const el = audioElementsRef.current[socketId];
+    if (el) {
+      el.volume = volume;
+    }
+  };
 
   const [layout, setLayout] = useState({ chatVisible: true, chatPosition: 'right' as 'left' | 'right' });
 
@@ -749,17 +774,24 @@ export const App: React.FC = () => {
 
       {/* Unsichtbare Audio-Empfänger für WebRTC-Sprachausgabe */}
       <div style={{ display: 'none' }}>
-        {remoteStreams.map((p) => (
-          <audio
-            key={p.socketId}
-            ref={(el) => {
-              if (el && p.stream) {
-                el.srcObject = p.stream;
-              }
-            }}
-            autoPlay
-          />
-        ))}
+        {remoteStreams.map((p) => {
+          const vol = userVolumes[p.username] !== undefined ? userVolumes[p.username] : 1.0;
+          return (
+            <audio
+              key={p.socketId}
+              ref={(el) => {
+                if (el) {
+                  audioElementsRef.current[p.socketId] = el;
+                  if (p.stream) el.srcObject = p.stream;
+                  el.volume = vol;
+                } else {
+                  delete audioElementsRef.current[p.socketId];
+                }
+              }}
+              autoPlay
+            />
+          );
+        })}
       </div>
 
       {/* Header */}
@@ -1313,6 +1345,31 @@ export const App: React.FC = () => {
                     {keyboardFilter ? t('controls.enabled') : t('controls.disabled')}
                   </button>
                 </div>
+
+                {/* Audio Profile (Compressor/EQ) Selector */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '6px', marginTop: '4px' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    {language === 'de' ? 'Klangprofil (Equalizer & Kompressor)' : 'Audio Profile (EQ & Compressor)'}
+                  </span>
+                  <select
+                    value={audioProfile}
+                    onChange={(e) => setAudioProfile(e.target.value as any)}
+                    className="input-field"
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '0.75rem',
+                      background: 'rgba(0,0,0,0.25)',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="flat">⚡ Flat / Neutral</option>
+                    <option value="studio">🎙️ Studio Voice (Warm & Soft)</option>
+                    <option value="clear">🗣️ Clear Communication</option>
+                  </select>
+                </div>
               </div>
 
               {/* Noise Gate Sensitivity Slider */}
@@ -1392,6 +1449,8 @@ export const App: React.FC = () => {
               localUsername={username}
               localSpeaking={localSpeaking}
               isMuted={isMuted}
+              userVolumes={userVolumes}
+              onUserVolumeChange={handleUserVolumeChange}
               remoteParticipants={remoteStreams.map((p) => ({
                 socketId: p.socketId,
                 username: p.username,
