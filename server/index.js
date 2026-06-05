@@ -515,11 +515,18 @@ io.on('connection', (socket) => {
         socket.emit('login-error', 'Kein Passkey für diesen Account registriert.');
         return;
       }
-      const passkeys = JSON.parse(user.passkeyCredentials);
+      const passkeys = JSON.parse(user.passkeyCredentials || '[]');
+      const validPasskeys = passkeys.filter(p => p && p.credentialID && p.credentialPublicKey);
+      
+      if (validPasskeys.length === 0) {
+        socket.emit('login-error', 'Kein gültiger Passkey für diesen Account registriert.');
+        return;
+      }
+
       const options = await generateAuthenticationOptions({
         rpID: hostname,
-        allowCredentials: passkeys.map(p => ({
-          id: Buffer.from(p.credentialID, 'base64url'),
+        allowCredentials: validPasskeys.map(p => ({
+          id: p.credentialID,
           type: 'public-key',
           transports: p.transports,
         })),
@@ -540,11 +547,11 @@ io.on('connection', (socket) => {
     if (!key) return;
     try {
       const user = await db.getUser(key);
-      const passkeys = JSON.parse(user.passkeyCredentials);
+      const passkeys = JSON.parse(user.passkeyCredentials || '[]');
       const passkey = passkeys.find(p => p.credentialID === credential.id);
       
-      if (!passkey) {
-        socket.emit('login-error', 'Ungültiger Passkey.');
+      if (!passkey || !passkey.credentialPublicKey) {
+        socket.emit('login-error', 'Ungültiger oder korrupter Passkey.');
         return;
       }
 
@@ -553,9 +560,9 @@ io.on('connection', (socket) => {
         expectedChallenge: socket.data.currentChallenge,
         expectedOrigin: origin,
         expectedRPID: hostname,
-        authenticator: {
-          credentialID: Buffer.from(passkey.credentialID, 'base64url'),
-          credentialPublicKey: Buffer.from(passkey.credentialPublicKey, 'base64url'),
+        credential: {
+          id: passkey.credentialID,
+          publicKey: new Uint8Array(Buffer.from(passkey.credentialPublicKey, 'base64url')),
           counter: passkey.counter,
         },
       });
