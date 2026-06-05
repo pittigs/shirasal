@@ -16,6 +16,11 @@ import {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
 } from '@simplewebauthn/server';
+import { AccessToken } from 'livekit-server-sdk';
+
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'shirasal_lk_key';
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'shirasal_lk_secret_secure_string_987654321';
+const LIVEKIT_PUBLIC_URL = process.env.LIVEKIT_PUBLIC_URL || 'ws://localhost:7880';
 
 // --- SECURITY HELPERS ---
 
@@ -934,7 +939,7 @@ io.on('connection', (socket) => {
 
   // --- VOICE SYSTEMS ---
 
-  socket.on('join-room', ({ roomId, username, role }) => {
+  socket.on('join-room', async ({ roomId, username, role }) => {
     const channel = channels.find(c => c.id === roomId);
     if (!channel) {
       socket.emit('error-msg', 'Raum existiert nicht.');
@@ -981,6 +986,30 @@ io.on('connection', (socket) => {
 
     const participants = Object.values(roomParticipants[roomId]).filter(p => p.socketId !== socket.id);
     socket.emit('room-participants', participants);
+
+    // LiveKit Token für den Client generieren und senden
+    try {
+      const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+        identity: username,
+        ttl: '2h',
+      });
+      at.addGrant({
+        roomJoin: true,
+        room: roomId,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: true
+      });
+      const token = await at.toJwt();
+      socket.emit('livekit-token', {
+        token,
+        serverUrl: LIVEKIT_PUBLIC_URL,
+        roomId
+      });
+    } catch (err) {
+      console.error('Fehler bei der LiveKit-Tokengenerierung:', err);
+      socket.emit('error-msg', 'LiveKit Token-Generierung fehlgeschlagen.');
+    }
     
     broadcastUsersState();
   });

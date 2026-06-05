@@ -10,6 +10,10 @@ services:
       - DB_TYPE=sqlite
       - DB_FILE_PATH=/app/server/data/shirasal.sqlite
       - ALLOW_DEMO_ROLES=false
+      - LIVEKIT_URL=http://livekit-server:7880
+      - LIVEKIT_API_KEY=shirasal_lk_key
+      - LIVEKIT_API_SECRET=shirasal_lk_secret_secure_string_987654321
+      - LIVEKIT_PUBLIC_URL=wss://lk.shirasal.eu
       # Für MariaDB-Nutzung (Werte werden sicher aus der .env geladen):
       # - DB_TYPE=mariadb
       # - DB_HOST=db-host-ip
@@ -44,6 +48,10 @@ services:
       - DB_TYPE=sqlite
       - DB_FILE_PATH=/app/server/data/shirasal.sqlite
       - ALLOW_DEMO_ROLES=true
+      - LIVEKIT_URL=http://livekit-server:7880
+      - LIVEKIT_API_KEY=shirasal_lk_key
+      - LIVEKIT_API_SECRET=shirasal_lk_secret_secure_string_987654321
+      - LIVEKIT_PUBLIC_URL=wss://lk.shirasal.eu
       # Für MariaDB-Nutzung (Werte werden sicher aus der .env geladen):
       # - DB_TYPE=mariadb
       # - DB_HOST=db-host-ip
@@ -67,6 +75,30 @@ services:
       - shirasal-demo-data:/app/server/data
     restart: unless-stopped
 
+  # 3. LiveKit SFU Server
+  livekit-server:
+    image: livekit/livekit-server:latest
+    container_name: livekit-server
+    command: --config /etc/livekit.yaml
+    restart: unless-stopped
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50100:50000-50100/udp"
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "traefik_proxy"
+      traefik.http.routers.livekit.rule: "Host(`lk.shirasal.eu`)"
+      traefik.http.routers.livekit.entrypoints: "websecure"
+      traefik.http.routers.livekit.tls: "true"
+      traefik.http.routers.livekit.tls.certresolver: "http-resolver"
+      traefik.http.services.livekit.loadbalancer.server.port: "7880"
+    networks:
+      - default
+      - traefik_proxy
+
 volumes:
   shirasal-prod-data:
   shirasal-demo-data:
@@ -75,3 +107,4 @@ networks:
   default:
   traefik_proxy:
     external: true
+

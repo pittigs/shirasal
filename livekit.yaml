@@ -1,0 +1,13 @@
+# LiveKit Server Configuration
+port: 7880
+bind_addresses:
+  - ""
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: false
+
+# API-Keys zur Authentifizierung des App-Servers
+keys:
+  shirasal_lk_key: "shirasal_lk_secret_secure_string_987654321"

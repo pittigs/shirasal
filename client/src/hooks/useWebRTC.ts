@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { Room, RoomEvent, createLocalAudioTrack, ExternalE2EEKeyProvider } from 'livekit-client';
 
 import { RnnoiseWorkletNode, loadRnnoise } from '@sapphi-red/web-noise-suppressor';
 import rnnoiseWorkletPath from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
@@ -242,12 +243,13 @@ export const useWebRTC = () => {
   const [localSpeaking, setLocalSpeaking] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
+  const livekitRoomRef = useRef<Room | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const processedStreamRef = useRef<MediaStream | null>(null);
   const destinationNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const screenAudioSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const localGainNodeRef = useRef<GainNode | null>(null);
-  const peerConnectionsRef = useRef<{ [socketId: string]: RTCPeerConnection }>({});
+  const peerConnectionsRef = useRef<{ [socketId: string]: any }>({});
   const audioContextRef = useRef<AudioContext | null>(null);
   const localAnalyserRef = useRef<AnalyserNode | null>(null);
   const localSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -261,7 +263,144 @@ export const useWebRTC = () => {
   // Webcam Support
   const [localCameraStream, setLocalCameraStream] = useState<MediaStream | null>(null);
   const localCameraStreamRef = useRef<MediaStream | null>(null);
-  const cameraSendersRef = useRef<{ [socketId: string]: RTCRtpSender }>({});
+  const cameraSendersRef = useRef<{ [socketId: string]: any }>({});
+
+  const onlineUsersRef = useRef(onlineUsers);
+  useEffect(() => {
+    onlineUsersRef.current = onlineUsers;
+  }, [onlineUsers]);
+
+  const setupLiveKitEventListeners = (room: Room) => {
+    const updateParticipantsState = () => {
+      const streams: RemoteStreamInfo[] = [];
+
+      room.remoteParticipants.forEach((participant) => {
+        let audioStream: MediaStream | undefined;
+        let screenStream: MediaStream | undefined;
+        let cameraStream: MediaStream | undefined;
+
+        participant.trackPublications.forEach((pub) => {
+          if (pub.track && pub.isSubscribed) {
+            const mediaTrack = pub.track.mediaStreamTrack;
+            if (mediaTrack) {
+              if (pub.kind === 'audio') {
+                audioStream = new MediaStream([mediaTrack]);
+              } else if (pub.kind === 'video') {
+                if (pub.source === 'screen_share') {
+                  screenStream = new MediaStream([mediaTrack]);
+                } else {
+                  cameraStream = new MediaStream([mediaTrack]);
+                }
+              }
+            }
+          }
+        });
+
+        const onlineUser = onlineUsersRef.current.find(u => u.username === participant.identity);
+        const role = onlineUser?.role || 'guest';
+
+        streams.push({
+          socketId: participant.sid,
+          username: participant.identity,
+          role: role,
+          stream: audioStream || new MediaStream(),
+          videoStream: screenStream,
+          cameraStream: cameraStream,
+          isSpeaking: participant.isSpeaking,
+          audioActive: true
+        });
+      });
+
+      setRemoteStreams(streams);
+    };
+
+    room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      console.log(`Subscribed to track ${publication.trackSid} from ${participant.identity}`);
+      updateParticipantsState();
+    });
+
+    room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+      console.log(`Unsubscribed from track ${publication.trackSid} from ${participant.identity}`);
+      updateParticipantsState();
+    });
+
+    room.on(RoomEvent.ParticipantConnected, (participant) => {
+      console.log(`Participant connected to LiveKit: ${participant.identity}`);
+      updateParticipantsState();
+      playNotificationSound('join');
+    });
+
+    room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+      console.log(`Participant disconnected from LiveKit: ${participant.identity}`);
+      updateParticipantsState();
+      playNotificationSound('leave');
+    });
+
+    room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+      setRemoteStreams((prev) =>
+        prev.map((p) => {
+          const isSpeaking = speakers.some((s) => s.identity === p.username);
+          return { ...p, isSpeaking };
+        })
+      );
+    });
+
+    updateParticipantsState();
+  };
+
+  const connectToLiveKit = async (url: string, token: string, roomId: string) => {
+    try {
+      if (livekitRoomRef.current) {
+        await livekitRoomRef.current.disconnect();
+      }
+
+      const keyProvider = new ExternalE2EEKeyProvider();
+      const derivedKey = `shirasal-e2ee-salt-${roomId}`;
+      await keyProvider.setKey(derivedKey);
+
+      const room = new Room({
+        e2ee: {
+          keyProvider,
+          worker: new Worker(new URL('livekit-client/dist/livekit-client.e2ee.worker.js', import.meta.url))
+        },
+        publishDefaults: {
+          audioBitrate: 256000,
+        }
+      });
+      livekitRoomRef.current = room;
+
+      await room.setE2EEEnabled(true);
+      await room.connect(url, token);
+      console.log('Successfully connected to LiveKit room:', roomId);
+
+      const streamToSend = processedStreamRef.current || localStreamRef.current;
+      if (streamToSend) {
+        const audioTracks = streamToSend.getAudioTracks();
+        if (audioTracks.length > 0) {
+          const localTrack = createLocalAudioTrack(audioTracks[0]);
+          await room.localParticipant.publishTrack(localTrack);
+        }
+      }
+
+      if (localScreenStreamRef.current) {
+        const videoTrack = localScreenStreamRef.current.getVideoTracks()[0];
+        if (videoTrack) {
+          await room.localParticipant.publishTrack(videoTrack, { name: 'screen' });
+        }
+      }
+
+      if (localCameraStreamRef.current) {
+        const videoTrack = localCameraStreamRef.current.getVideoTracks()[0];
+        if (videoTrack) {
+          await room.localParticipant.publishTrack(videoTrack, { name: 'camera' });
+        }
+      }
+
+      setupLiveKitEventListeners(room);
+    } catch (err) {
+      console.error('Failed to connect to LiveKit:', err);
+    }
+  };
 
   // 1. Socket.io Verbindung & Event-Management
   useEffect(() => {
@@ -521,127 +660,10 @@ export const useWebRTC = () => {
       setSearchResults(mapped);
     });
 
-    // --- WebRTC Connectors ---
-    socket.on('user-joined', async ({ socketId, username: peerName, role: peerRole }: Participant) => {
-      console.log(`Neuer Peer beigetreten: ${peerName} (${socketId})`);
-      playNotificationSound('join');
-      const pc = createPeerConnection(socketId, peerName, peerRole);
-      
-      const streamToSend = processedStreamRef.current || localStreamRef.current;
-      if (streamToSend) {
-        streamToSend.getAudioTracks().forEach((track) => {
-          pc.addTrack(track, streamToSend!);
-        });
-      }
-
-      // Falls wir bereits den Bildschirm teilen, fügen wir den Video-Track direkt hinzu
-      if (localScreenStreamRef.current) {
-        const videoTrack = localScreenStreamRef.current.getVideoTracks()[0];
-        if (videoTrack) {
-          const sender = pc.addTrack(videoTrack, localScreenStreamRef.current);
-          screenSendersRef.current[socketId] = sender;
-        }
-      }
-
-      // Falls wir bereits die Kamera aktiviert haben, fügen wir den Video-Track direkt hinzu
-      if (localCameraStreamRef.current) {
-        const videoTrack = localCameraStreamRef.current.getVideoTracks()[0];
-        if (videoTrack) {
-          const sender = pc.addTrack(videoTrack, localCameraStreamRef.current);
-          cameraSendersRef.current[socketId] = sender;
-        }
-      }
-
-      try {
-        const offer = await pc.createOffer({ offerToReceiveAudio: true });
-        const optimizedSdp = optimizeOpus(offer.sdp || '');
-        const optimizedOffer = { type: offer.type, sdp: optimizedSdp } as RTCSessionDescriptionInit;
-        await pc.setLocalDescription(optimizedOffer);
-        socket.emit('webrtc-signal', {
-          targetId: socketId,
-          signal: { type: 'offer', sdp: pc.localDescription }
-        });
-      } catch (err) {
-        console.error('Fehler beim Erstellen des WebRTC Offers:', err);
-      }
-    });
-
-    socket.on('webrtc-signal', async ({ senderId, signal }) => {
-      let pc = peerConnectionsRef.current[senderId];
-
-      if (signal.sdp) {
-        if (!pc) {
-          const peer = remoteStreams.find(p => p.socketId === senderId);
-          pc = createPeerConnection(senderId, peer?.username || 'User', peer?.role || 'guest');
-          
-          const streamToSend = processedStreamRef.current || localStreamRef.current;
-          if (streamToSend) {
-            streamToSend.getAudioTracks().forEach((track) => {
-              pc.addTrack(track, streamToSend!);
-            });
-          }
-        }
-
-        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-
-        if (signal.sdp.type === 'offer') {
-          try {
-            const answer = await pc.createAnswer();
-            const optimizedSdp = optimizeOpus(answer.sdp || '');
-            const optimizedAnswer = { type: answer.type, sdp: optimizedSdp } as RTCSessionDescriptionInit;
-            await pc.setLocalDescription(optimizedAnswer);
-            socket.emit('webrtc-signal', {
-              targetId: senderId,
-              signal: { type: 'answer', sdp: pc.localDescription }
-            });
-          } catch (err) {
-            console.error('Fehler beim Erstellen der WebRTC Answer:', err);
-          }
-        }
-      } else if (signal.candidate) {
-        if (pc) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
-          } catch (err) {
-            console.error('Fehler beim Hinzufügen des ICE-Kandidaten:', err);
-          }
-        }
-      }
-    });
-
-    socket.on('room-participants', (participants: Participant[]) => {
-      participants.forEach((p) => {
-        const pc = createPeerConnection(p.socketId, p.username, p.role);
-        const streamToSend = processedStreamRef.current || localStreamRef.current;
-        if (streamToSend) {
-          streamToSend.getAudioTracks().forEach((track) => {
-            pc.addTrack(track, streamToSend!);
-          });
-        }
-
-        // Falls wir bereits den Bildschirm teilen, fügen wir den Video-Track direkt hinzu
-        if (localScreenStreamRef.current) {
-          const videoTrack = localScreenStreamRef.current.getVideoTracks()[0];
-          if (videoTrack) {
-            const sender = pc.addTrack(videoTrack, localScreenStreamRef.current);
-            screenSendersRef.current[p.socketId] = sender;
-          }
-        }
-
-        // Falls wir bereits die Kamera aktiviert haben, fügen wir den Video-Track direkt hinzu
-        if (localCameraStreamRef.current) {
-          const videoTrack = localCameraStreamRef.current.getVideoTracks()[0];
-          if (videoTrack) {
-            const sender = pc.addTrack(videoTrack, localCameraStreamRef.current);
-            cameraSendersRef.current[p.socketId] = sender;
-          }
-        }
-      });
-    });
-
-    socket.on('user-left', ({ socketId }) => {
-      closePeer(socketId);
-      playNotificationSound('leave');
+    // --- LiveKit Token Listener ---
+    socket.on('livekit-token', async ({ token, serverUrl, roomId }) => {
+      console.log('Empfange LiveKit Token, verbinde...', roomId);
+      await connectToLiveKit(serverUrl, token, roomId);
     });
 
     return () => {
@@ -682,12 +704,16 @@ export const useWebRTC = () => {
 
       const streamToSend = processedStreamRef.current || stream;
       const newTrack = streamToSend.getAudioTracks()[0];
-      for (const socketId in peerConnectionsRef.current) {
-        const pc = peerConnectionsRef.current[socketId];
-        const senders = pc.getSenders();
-        const sender = senders.find((s) => s.track && s.track.kind === 'audio');
-        if (sender && newTrack) {
-          await sender.replaceTrack(newTrack);
+
+      if (livekitRoomRef.current && livekitRoomRef.current.state === 'connected') {
+        const room = livekitRoomRef.current;
+        const pubs = Array.from(room.localParticipant.audioTrackPublications.values());
+        for (const pub of pubs) {
+          await room.localParticipant.unpublishTrack(pub.track!);
+        }
+        if (newTrack) {
+          const localTrack = createLocalAudioTrack(newTrack);
+          await room.localParticipant.publishTrack(localTrack);
         }
       }
     } catch (err) {
@@ -890,143 +916,12 @@ export const useWebRTC = () => {
     }
   };
 
-  const createPeerConnection = (socketId: string, peerName: string, peerRole: string) => {
-    const pc = new RTCPeerConnection(rtcConfig);
-    peerConnectionsRef.current[socketId] = pc;
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate && socketRef.current) {
-        socketRef.current.emit('webrtc-signal', {
-          targetId: socketId,
-          signal: { candidate: event.candidate }
-        });
-      }
-    };
-
-    pc.ontrack = (event) => {
-      const remoteStream = event.streams[0] || new MediaStream([event.track]);
-
-      setRemoteStreams((prev) => {
-        const exists = prev.some((p) => p.socketId === socketId);
-        if (exists) {
-          return prev.map((p) => {
-            if (p.socketId === socketId) {
-              if (event.track.kind === 'video') {
-                const label = event.track.label.toLowerCase();
-                const isScreen = label.includes('screen') || label.includes('window') || label.includes('display') || label.includes('monitor');
-                if (isScreen) {
-                  return { ...p, videoStream: remoteStream };
-                } else {
-                  return { ...p, cameraStream: remoteStream };
-                }
-              } else {
-                return { ...p, stream: remoteStream };
-              }
-            }
-            return p;
-          });
-        }
-
-        const label = event.track.label.toLowerCase();
-        const isScreen = label.includes('screen') || label.includes('window') || label.includes('display') || label.includes('monitor');
-        return [
-          ...prev,
-          {
-            socketId,
-            username: peerName,
-            role: peerRole,
-            stream: event.track.kind === 'audio' ? remoteStream : new MediaStream(),
-            videoStream: (event.track.kind === 'video' && isScreen) ? remoteStream : undefined,
-            cameraStream: (event.track.kind === 'video' && !isScreen) ? remoteStream : undefined,
-            isSpeaking: false,
-            audioActive: true
-          }
-        ];
-      });
-
-      if (event.track.kind === 'video') {
-        event.track.onended = () => {
-          setRemoteStreams((prev) =>
-            prev.map((p) => {
-              if (p.socketId === socketId) {
-                const label = event.track.label.toLowerCase();
-                const isScreen = label.includes('screen') || label.includes('window') || label.includes('display') || label.includes('monitor');
-                if (isScreen) {
-                  return { ...p, videoStream: undefined };
-                } else {
-                  return { ...p, cameraStream: undefined };
-                }
-              }
-              return p;
-            })
-          );
-        };
-      }
-
-      if (event.track.kind === 'audio') {
-        monitorRemoteSpeaking(socketId, remoteStream);
-      }
-    };
-
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        closePeer(socketId);
-      }
-    };
-
-    return pc;
-  };
-
-  const monitorRemoteSpeaking = (socketId: string, stream: MediaStream) => {
-    try {
-      if (!audioContextRef.current) return;
-      const ctx = audioContextRef.current;
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      source.connect(analyser);
-
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-
-      const interval = setInterval(() => {
-        if (!peerConnectionsRef.current[socketId]) {
-          clearInterval(interval);
-          return;
-        }
-
-        analyser.getByteFrequencyData(dataArray);
-        let total = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          total += dataArray[i];
-        }
-        const average = total / bufferLength;
-        const isSpeaking = average > 20;
-
-        setRemoteStreams((prev) =>
-          prev.map((p) => (p.socketId === socketId ? { ...p, isSpeaking } : p))
-        );
-      }, 100);
-    } catch (e) {
-      console.warn('Fehler bei Remote-Spracherkennung:', e);
-    }
-  };
-
-  const closePeer = (socketId: string) => {
-    if (peerConnectionsRef.current[socketId]) {
-      peerConnectionsRef.current[socketId].close();
-      delete peerConnectionsRef.current[socketId];
-    }
-    delete screenSendersRef.current[socketId];
-    delete cameraSendersRef.current[socketId];
-    setRemoteStreams((prev) => prev.filter((p) => p.socketId !== socketId));
-  };
-
   const closeAllConnections = () => {
-    Object.keys(peerConnectionsRef.current).forEach((id) => {
-      peerConnectionsRef.current[id].close();
-    });
-    peerConnectionsRef.current = {};
+    if (livekitRoomRef.current) {
+      livekitRoomRef.current.disconnect();
+      livekitRoomRef.current = null;
+    }
+
     setRemoteStreams([]);
     
     if (localStreamRef.current) {
@@ -1283,22 +1178,6 @@ export const useWebRTC = () => {
     });
   };
 
-  const renegotiatePeer = async (socketId: string) => {
-    const pc = peerConnectionsRef.current[socketId];
-    if (!pc) return;
-    try {
-      const offer = await pc.createOffer();
-      const optimizedSdp = optimizeOpus(offer.sdp || '');
-      await pc.setLocalDescription({ type: offer.type, sdp: optimizedSdp } as RTCSessionDescriptionInit);
-      socketRef.current?.emit('webrtc-signal', {
-        targetId: socketId,
-        signal: { type: 'offer', sdp: pc.localDescription }
-      });
-    } catch (err) {
-      console.error(`Fehler bei der Neuverhandlung fuer Peer ${socketId}:`, err);
-    }
-  };
-
   const startScreenShare = async () => {
     if (!joinedRoomId) return;
     try {
@@ -1327,11 +1206,8 @@ export const useWebRTC = () => {
         }
       }
 
-      for (const socketId in peerConnectionsRef.current) {
-        const pc = peerConnectionsRef.current[socketId];
-        const sender = pc.addTrack(videoTrack, stream);
-        screenSendersRef.current[socketId] = sender;
-        await renegotiatePeer(socketId);
+      if (livekitRoomRef.current && livekitRoomRef.current.state === 'connected') {
+        await livekitRoomRef.current.localParticipant.publishTrack(videoTrack, { name: 'screen' });
       }
     } catch (err) {
       console.error('Fehler beim Starten der Bildschirmuebertragung:', err);
@@ -1348,18 +1224,13 @@ export const useWebRTC = () => {
       screenAudioSourceNodeRef.current = null;
     }
 
-    for (const socketId in peerConnectionsRef.current) {
-      const pc = peerConnectionsRef.current[socketId];
-      const sender = screenSendersRef.current[socketId];
-      if (sender && pc.signalingState !== 'closed') {
-        try {
-          pc.removeTrack(sender);
-        } catch (e) {
-          console.warn('Fehler beim Entfernen des Video-Senders:', e);
+    if (livekitRoomRef.current && livekitRoomRef.current.state === 'connected') {
+      const pubs = Array.from(livekitRoomRef.current.localParticipant.videoTrackPublications.values());
+      for (const pub of pubs) {
+        if (pub.source === 'screen_share' || pub.trackName === 'screen') {
+          await livekitRoomRef.current.localParticipant.unpublishTrack(pub.track!);
         }
       }
-      delete screenSendersRef.current[socketId];
-      await renegotiatePeer(socketId);
     }
 
     if (localScreenStreamRef.current) {
@@ -1385,11 +1256,8 @@ export const useWebRTC = () => {
         stopCamera();
       };
 
-      for (const socketId in peerConnectionsRef.current) {
-        const pc = peerConnectionsRef.current[socketId];
-        const sender = pc.addTrack(videoTrack, stream);
-        cameraSendersRef.current[socketId] = sender;
-        await renegotiatePeer(socketId);
+      if (livekitRoomRef.current && livekitRoomRef.current.state === 'connected') {
+        await livekitRoomRef.current.localParticipant.publishTrack(videoTrack, { name: 'camera' });
       }
     } catch (err) {
       console.error('Fehler beim Starten der Kamera:', err);
@@ -1397,18 +1265,13 @@ export const useWebRTC = () => {
   };
 
   const stopCamera = async () => {
-    for (const socketId in peerConnectionsRef.current) {
-      const pc = peerConnectionsRef.current[socketId];
-      const sender = cameraSendersRef.current[socketId];
-      if (sender && pc.signalingState !== 'closed') {
-        try {
-          pc.removeTrack(sender);
-        } catch (e) {
-          console.warn('Fehler beim Entfernen des Kamera-Senders:', e);
+    if (livekitRoomRef.current && livekitRoomRef.current.state === 'connected') {
+      const pubs = Array.from(livekitRoomRef.current.localParticipant.videoTrackPublications.values());
+      for (const pub of pubs) {
+        if (pub.source === 'camera' || pub.trackName === 'camera') {
+          await livekitRoomRef.current.unpublishTrack(pub.track!);
         }
       }
-      delete cameraSendersRef.current[socketId];
-      await renegotiatePeer(socketId);
     }
 
     if (localCameraStreamRef.current) {
