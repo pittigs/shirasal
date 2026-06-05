@@ -95,9 +95,10 @@ export const init = async () => {
     }
     if (!(await knex.schema.hasColumn('users', 'createdAt'))) {
       await knex.schema.alterTable('users', (table) => {
-        table.timestamp('createdAt').defaultTo(knex.fn.now());
+        table.timestamp('createdAt').nullable();
       });
       console.log('Spalte "createdAt" zur Tabelle "users" hinzugefügt.');
+      await knex('users').whereNull('createdAt').update({ createdAt: knex.fn.now() });
     }
   }
 
