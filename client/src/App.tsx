@@ -74,6 +74,8 @@ export const App: React.FC = () => {
     stopCamera,
     createChannel,
     createTextChannel,
+    deleteChannel,
+    deleteTextChannel,
     joinRoom,
     leaveRoom,
     joinTextChannel,
@@ -1462,6 +1464,8 @@ export const App: React.FC = () => {
               onJoinTextRoom={joinTextChannel}
               onCreateChannel={createChannel}
               onCreateTextChannel={createTextChannel}
+              onDeleteChannel={deleteChannel}
+              onDeleteTextChannel={deleteTextChannel}
               allUsers={allUsers}
               activePrivatePartner={activePrivatePartner}
               unreadDMs={unreadDMs}

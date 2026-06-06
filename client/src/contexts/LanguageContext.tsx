@@ -88,7 +88,8 @@ const translations = {
       hangup: 'Auflegen',
       dm_title: 'PN an @{name} senden',
       dm_new: 'neu',
-      you: 'Du'
+      you: 'Du',
+      delete_confirm: 'Möchtest du diesen Kanal wirklich löschen?'
     },
     chat: {
       default_title: 'Allgemeiner Chatraum',
@@ -238,7 +239,8 @@ const translations = {
       hangup: 'Hang up',
       dm_title: 'Send DM to @{name}',
       dm_new: 'new',
-      you: 'You'
+      you: 'You',
+      delete_confirm: 'Are you sure you want to delete this channel?'
     },
     chat: {
       default_title: 'General Chatroom',

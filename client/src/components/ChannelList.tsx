@@ -37,6 +37,8 @@ interface ChannelListProps {
   onJoinTextRoom: (roomId: string) => void;
   onCreateChannel: (name: string, minRole: string) => void;
   onCreateTextChannel: (name: string, minRole: string) => void;
+  onDeleteChannel: (channelId: string) => void;
+  onDeleteTextChannel: (channelId: string) => void;
   allUsers: Array<{ username: string; role: string; online: boolean; socketId: string | null; avatar?: string | null }>;
   activePrivatePartner: string | null;
   unreadDMs: { [username: string]: boolean };
@@ -69,6 +71,8 @@ export const ChannelList: React.FC<ChannelListProps> = ({
   onJoinTextRoom,
   onCreateChannel,
   onCreateTextChannel,
+  onDeleteChannel,
+  onDeleteTextChannel,
   allUsers,
   activePrivatePartner,
   unreadDMs,
@@ -238,9 +242,38 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                 }}
               >
                 <span># {tc.name}</span>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  {t('channels.role_required_label')} {tc.minRole.toUpperCase()}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                    {t('channels.role_required_label')} {tc.minRole.toUpperCase()}
+                  </span>
+                  {tc.id !== 'general' && userRole === 'admin' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm(t('channels.delete_confirm'))) {
+                          onDeleteTextChannel(tc.id);
+                        }
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'rgba(239, 68, 68, 0.6)',
+                        cursor: 'pointer',
+                        fontSize: '0.9rem',
+                        padding: '0 4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'color 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = 'rgb(239, 68, 68)'}
+                      onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(239, 68, 68, 0.6)'}
+                      title="Kanal löschen"
+                    >
+                      🗑️
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -349,30 +382,59 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                   <span style={{ fontWeight: 600, fontSize: '0.9rem', color: isJoined ? '#fff' : 'var(--text-primary)' }}>
                     🔊 {c.name}
                   </span>
-                  {isJoined ? (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onLeaveRoom();
-                      }}
-                      style={{
-                        background: '#ef4444',
-                        border: 'none',
-                        color: '#fff',
-                        padding: '4px 8px',
-                        borderRadius: '6px',
-                        fontSize: '0.75rem',
-                        fontWeight: 'bold',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {t('channels.hangup')}
-                    </button>
-                  ) : (
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                      {t('channels.role_required_label')} {c.minRole.toUpperCase()}
-                    </span>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {isJoined ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onLeaveRoom();
+                        }}
+                        style={{
+                          background: '#ef4444',
+                          border: 'none',
+                          color: '#fff',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          fontSize: '0.75rem',
+                          fontWeight: 'bold',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {t('channels.hangup')}
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        {t('channels.role_required_label')} {c.minRole.toUpperCase()}
+                      </span>
+                    )}
+                    {c.id !== 'lobby' && userRole === 'admin' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(t('channels.delete_confirm'))) {
+                            onDeleteChannel(c.id);
+                          }
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'rgba(239, 68, 68, 0.6)',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem',
+                          padding: '0 4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'color 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = 'rgb(239, 68, 68)'}
+                        onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(239, 68, 68, 0.6)'}
+                        title="Kanal löschen"
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Teilnehmerliste im Sprachkanal */}

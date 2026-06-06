@@ -1088,6 +1088,58 @@ io.on('connection', (socket) => {
     io.emit('channels-list', channels);
   });
 
+  socket.on('delete-channel', ({ channelId }) => {
+    if (!hasPermission(socket, 'canManageChannels')) {
+      socket.emit('error-msg', 'Keine Berechtigung, Kanäle zu löschen.');
+      return;
+    }
+
+    if (channelId === 'lobby') {
+      socket.emit('error-msg', 'Der Standardkanal "Lobby" kann nicht gelöscht werden.');
+      return;
+    }
+
+    const index = channels.findIndex(c => c.id === channelId);
+    if (index !== -1) {
+      channels.splice(index, 1);
+
+      // User umschichten: alle User in diesem Kanal trennen
+      const participants = roomParticipants[channelId] ? Object.keys(roomParticipants[channelId]) : [];
+      participants.forEach(socketId => {
+        const pSocket = io.sockets.sockets.get(socketId);
+        if (pSocket) {
+          leaveCurrentRooms(pSocket);
+          pSocket.emit('room-deleted', { roomId: channelId });
+        }
+      });
+
+      io.emit('channels-list', channels);
+      broadcastUsersState();
+      console.log(`Sprachkanal ${channelId} wurde von ${socket.data.username} gelöscht.`);
+    }
+  });
+
+  socket.on('delete-text-channel', ({ channelId }) => {
+    if (!hasPermission(socket, 'canManageChannels')) {
+      socket.emit('error-msg', 'Keine Berechtigung, Kanäle zu löschen.');
+      return;
+    }
+
+    if (channelId === 'general') {
+      socket.emit('error-msg', 'Der Standardkanal "Allgemein" kann nicht gelöscht werden.');
+      return;
+    }
+
+    const index = textChannels.findIndex(c => c.id === channelId);
+    if (index !== -1) {
+      textChannels.splice(index, 1);
+      delete chatMessagesByChannel[channelId];
+      io.emit('text-channel-deleted', { channelId });
+      io.emit('text-channels-list', textChannels);
+      console.log(`Textkanal ${channelId} wurde von ${socket.data.username} gelöscht.`);
+    }
+  });
+
   // --- EMOJI REACTION EVENTS ---
 
   socket.on('toggle-reaction', ({ channelId, messageId, emoji }) => {

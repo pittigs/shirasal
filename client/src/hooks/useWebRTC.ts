@@ -650,6 +650,24 @@ export const useWebRTC = () => {
       await connectToLiveKit(serverUrl, token, roomId);
     });
 
+    socket.on('room-deleted', ({ roomId }) => {
+      if (livekitRoomRef.current && roomId === livekitRoomRef.current.name) {
+        console.log('Room was deleted, leaving...');
+        leaveRoom();
+        alert('Der Sprachkanal wurde gelöscht.');
+      }
+    });
+
+    socket.on('text-channel-deleted', ({ channelId }) => {
+      setCurrentTextRoomId((prev) => {
+        if (prev === channelId) {
+          socket.emit('join-text-channel', { channelId: 'general' });
+          return 'general';
+        }
+        return prev;
+      });
+    });
+
     return () => {
       socket.disconnect();
       closeAllConnections();
@@ -1107,6 +1125,18 @@ export const useWebRTC = () => {
     }
   };
 
+  const deleteChannel = (channelId: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit('delete-channel', { channelId });
+    }
+  };
+
+  const deleteTextChannel = (channelId: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit('delete-text-channel', { channelId });
+    }
+  };
+
   const toggleMute = () => {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
@@ -1385,6 +1415,8 @@ export const useWebRTC = () => {
     stopCamera,
     createChannel,
     createTextChannel,
+    deleteChannel,
+    deleteTextChannel,
     joinRoom,
     leaveRoom,
     joinTextChannel,
