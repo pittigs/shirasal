@@ -246,7 +246,7 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                     {t('channels.role_required_label')} {tc.minRole.toUpperCase()}
                   </span>
-                  {tc.id !== 'general' && userRole === 'admin' && (
+                  {userRole === 'admin' && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -407,7 +407,7 @@ export const ChannelList: React.FC<ChannelListProps> = ({
                         {t('channels.role_required_label')} {c.minRole.toUpperCase()}
                       </span>
                     )}
-                    {c.id !== 'lobby' && userRole === 'admin' && (
+                    {userRole === 'admin' && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

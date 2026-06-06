@@ -1094,8 +1094,8 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (channelId === 'lobby') {
-      socket.emit('error-msg', 'Der Standardkanal "Lobby" kann nicht gelöscht werden.');
+    if (channels.length <= 1) {
+      socket.emit('error-msg', 'Es muss mindestens ein Sprachkanal bestehen bleiben.');
       return;
     }
 
@@ -1125,8 +1125,8 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (channelId === 'general') {
-      socket.emit('error-msg', 'Der Standardkanal "Allgemein" kann nicht gelöscht werden.');
+    if (textChannels.length <= 1) {
+      socket.emit('error-msg', 'Es muss mindestens ein Textkanal bestehen bleiben.');
       return;
     }
 

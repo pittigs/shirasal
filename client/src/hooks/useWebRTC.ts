@@ -410,6 +410,14 @@ export const useWebRTC = () => {
 
     socket.on('text-channels-list', (list: Channel[]) => {
       setTextChannels(list);
+      setCurrentTextRoomId((prev) => {
+        if (!list.some((c) => c.id === prev)) {
+          const nextChannelId = list[0]?.id || 'general';
+          socket.emit('join-text-channel', { channelId: nextChannelId });
+          return nextChannelId;
+        }
+        return prev;
+      });
     });
 
     socket.on('text-history', (history: ChatMessage[]) => {
